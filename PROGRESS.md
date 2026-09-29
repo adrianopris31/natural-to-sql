@@ -9,7 +9,7 @@ v1 + Phase 8 done: SQL preview/approval, EXPLAIN gate, multi-query (≤3), **rea
 2. **P8.9/P8.16** `make eval` with prompt v1.2; accept if ≥ 85.5% (v1.0 = 87.5%). Check the keyword refusal has no false positives on real questions.
 3. **P8.10** Playwright e2e (`frontend/tests/e2e/`, missing): preview → Run, Edit, Cancel, blocked, refused, risky → Run anyway, SQL log.
 4. **P2.4** Defense-in-depth test *without* opening the READ ONLY txn (prove the RO user alone blocks writes).
-5. Merge `feat/sql-preview-safety` into `main` once P8.8 passes (all work incl. Antigravity's last fixes is committed there); delete stray untracked `backend/backend/data/app.db`, `backend/test_dt.db`.
+5. Push `main` to user's remote GitHub repository.
 6. **P6.4** real-DB evals; pass history to repair(); **P8.11** tune EXPLAIN thresholds (real-DB costs so far: 5–230).
 
 ## OPEN (need user input)
