@@ -125,7 +125,7 @@ No single security measure is relied upon. Even if the LLM produces malicious or
 
 ### 1. Clone & Setup Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/natural-to-sql.git
+git clone https://github.com/adrianopris31/natural-to-sql.git
 cd natural-to-sql
 cp .env.example .env
 ```
