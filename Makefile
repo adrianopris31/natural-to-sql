@@ -1,10 +1,19 @@
-.PHONY: dev dev-backend dev-frontend test lint eval infra-up infra-down clean
+.PHONY: dev dev-backend dev-frontend test lint eval infra-up infra-down docker-build docker-up docker-down clean
 
 infra-up:
 	docker compose -f infra/docker-compose.yml up -d
 
 infra-down:
 	docker compose -f infra/docker-compose.yml down
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
 
 dev-backend:
 	cd backend && uv run uvicorn app.main:app --reload --port 8000

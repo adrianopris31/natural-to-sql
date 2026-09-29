@@ -1,0 +1,74 @@
+services:
+  # 1. Dev/Sample MySQL 9.0 Database
+  mysql:
+    image: mysql:9.0
+    container_name: natural_to_sql_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ecommerce
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./infra/mysql/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - ./infra/mysql/create_readonly_user.sql:/docker-entrypoint-initdb.d/create_readonly_user.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD:-rootpassword} || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # 2. FastAPI Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: natural_to_sql_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TARGET_DB_URL=${TARGET_DB_URL:-mysql+asyncmy://nl2sql_ro:nl2sql_ro_pass@mysql:3306/ecommerce}
+      - APP_DB_PATH=/app/data/app.db
+      - SQL_LOG_PATH=/app/data/sql_log.jsonl
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
+      - MAX_ROWS=${MAX_ROWS:-500}
+      - ANSWER_MAX_ROWS=${ANSWER_MAX_ROWS:-50}
+      - QUERY_TIMEOUT_MS=${QUERY_TIMEOUT_MS:-10000}
+      - MAX_REPAIR_ATTEMPTS=${MAX_REPAIR_ATTEMPTS:-2}
+      - MAX_QUERIES=${MAX_QUERIES:-3}
+      - EXPLAIN_MAX_COST=${EXPLAIN_MAX_COST:-5000000}
+      - EXPLAIN_MAX_ROWS=${EXPLAIN_MAX_ROWS:-10000000}
+      - EXPLAIN_WARN_ROWS=${EXPLAIN_WARN_ROWS:-100000}
+      - HISTORY_TURNS=${HISTORY_TURNS:-4}
+      - SCHEMA_FULL_MAX_TABLES=${SCHEMA_FULL_MAX_TABLES:-40}
+      - SCHEMA_SAMPLE_VALUES=${SCHEMA_SAMPLE_VALUES:-true}
+      - ALLOWED_FUNCTIONS=${ALLOWED_FUNCTIONS:-}
+      - DENY_TABLES=${DENY_TABLES:-migrations}
+      - DENY_COLUMNS=${DENY_COLUMNS:-password,remember_token,two_factor_secret,two_factor_recovery_codes}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # 3. Next.js 15 Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: natural_to_sql_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_INTERNAL_URL=http://backend:8000
+      - NEXT_PUBLIC_API_BASE=/api
+    depends_on:
+      - backend
