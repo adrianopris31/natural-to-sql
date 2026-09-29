@@ -1,0 +1,193 @@
+# Adversarial SQL corpus for natural-to-sql validator
+# Every single query in this file MUST be rejected with ValidationError.
+
+attacks:
+  # --- Category 1: DML Operations ---
+  - name: insert_statement
+    sql: "INSERT INTO users (name, email) VALUES ('Hacker', 'hacked@example.com')"
+  - name: update_statement
+    sql: "UPDATE users SET status = 'suspended' WHERE id = 1"
+  - name: delete_statement
+    sql: "DELETE FROM users WHERE id > 0"
+  - name: replace_statement
+    sql: "REPLACE INTO categories (id, name, slug) VALUES (1, 'Hacked', 'hacked')"
+  - name: insert_select
+    sql: "INSERT INTO users (name, email) SELECT name, email FROM users"
+
+  # --- Category 2: DDL Operations ---
+  - name: drop_table
+    sql: "DROP TABLE users"
+  - name: drop_table_if_exists
+    sql: "DROP TABLE IF EXISTS orders"
+  - name: create_table
+    sql: "CREATE TABLE evil (id INT PRIMARY KEY)"
+  - name: alter_table
+    sql: "ALTER TABLE users ADD COLUMN is_admin INT DEFAULT 1"
+  - name: truncate_table
+    sql: "TRUNCATE TABLE payments"
+  - name: rename_table
+    sql: "RENAME TABLE users TO old_users"
+
+  # --- Category 3: Stacked Queries ---
+  - name: stacked_semicolon_drop
+    sql: "SELECT * FROM users; DROP TABLE orders;"
+  - name: stacked_semicolon_insert
+    sql: "SELECT 1; INSERT INTO users (name) VALUES ('Hacked')"
+  - name: stacked_semicolon_select
+    sql: "SELECT * FROM users; SELECT * FROM products;"
+  - name: stacked_leading_semicolon
+    sql: "; DROP TABLE users"
+  - name: stacked_multiple_semicolons
+    sql: "SELECT 1;; DROP TABLE users;"
+
+  # --- Category 4: Comment Tricks & Executable Comments ---
+  - name: executable_comment_drop
+    sql: "SELECT /*!50000 DROP TABLE users, */ 1 FROM users"
+  - name: executable_comment_simple
+    sql: "/*!50000 SELECT * FROM users */"
+  - name: executable_comment_embedded
+    sql: "SELECT * FROM users WHERE id = 1 /*! AND 1=2 */"
+  - name: line_comment_stacked_drop
+    sql: "SELECT 1\n-- comment\nDROP TABLE users"
+  - name: hash_comment_stacked_drop
+    sql: "SELECT 1\n# comment\nDROP TABLE users"
+  - name: inline_comment_stacked_delete
+    sql: "SELECT 1; /* comment */ DELETE FROM users;"
+
+  # --- Category 5: File and System Access ---
+  - name: select_into_outfile
+    sql: "SELECT * FROM users INTO OUTFILE '/tmp/users.txt'"
+  - name: select_into_dumpfile
+    sql: "SELECT * FROM users INTO DUMPFILE '/tmp/dump.bin'"
+  - name: load_file_passwd
+    sql: "SELECT LOAD_FILE('/etc/passwd')"
+  - name: load_data_infile
+    sql: "LOAD DATA INFILE '/tmp/data.txt' INTO TABLE users"
+  - name: load_file_in_where
+    sql: "SELECT * FROM users WHERE email = LOAD_FILE('/tmp/test')"
+
+  # --- Category 6: DoS and Lock Functions ---
+  - name: sleep_function
+    sql: "SELECT SLEEP(10)"
+  - name: sleep_in_where
+    sql: "SELECT * FROM users WHERE SLEEP(5) = 0"
+  - name: benchmark_function
+    sql: "SELECT BENCHMARK(10000000, MD5('test'))"
+  - name: get_lock_function
+    sql: "SELECT GET_LOCK('malicious_lock', 10)"
+  - name: release_lock_function
+    sql: "SELECT RELEASE_LOCK('malicious_lock')"
+  - name: is_free_lock_function
+    sql: "SELECT IS_FREE_LOCK('some_lock')"
+  - name: release_all_locks_function
+    sql: "SELECT RELEASE_ALL_LOCKS()"
+  - name: master_pos_wait_function
+    sql: "SELECT MASTER_POS_WAIT('binlog.000001', 100)"
+  - name: source_pos_wait_function
+    sql: "SELECT SOURCE_POS_WAIT('binlog.000001', 100)"
+  - name: sys_exec_function
+    sql: "SELECT SYS_EXEC('id')"
+  - name: sys_eval_function
+    sql: "SELECT SYS_EVAL('whoami')"
+
+  # --- Category 7: Unrecognized / Dangerous Functions ---
+  - name: unrecognized_eval_function
+    sql: "SELECT EVAL_CODE('python')"
+  - name: shell_exec_custom
+    sql: "SELECT SHELL_EXEC('cat /etc/passwd')"
+  - name: custom_evil_func
+    sql: "SELECT EVIL_PLUGIN_FUNC(1, 2)"
+
+  # --- Category 8: System Schemas ---
+  - name: mysql_user_table
+    sql: "SELECT * FROM mysql.user"
+  - name: information_schema_tables
+    sql: "SELECT * FROM information_schema.tables"
+  - name: information_schema_columns
+    sql: "SELECT * FROM information_schema.columns"
+  - name: performance_schema_query
+    sql: "SELECT * FROM performance_schema.events_statements_current"
+  - name: sys_schema_query
+    sql: "SELECT * FROM sys.version"
+  - name: union_mysql_user
+    sql: "SELECT id, name FROM users UNION SELECT user, authentication_string FROM mysql.user"
+  - name: subquery_information_schema
+    sql: "SELECT name FROM users WHERE (SELECT count(*) FROM information_schema.tables) > 0"
+
+  # --- Category 9: Non-introspected / Disallowed Tables ---
+  - name: non_existent_admin_table
+    sql: "SELECT * FROM admin_credentials"
+  - name: non_existent_passwords_table
+    sql: "SELECT * FROM passwords"
+  - name: non_existent_secrets_table
+    sql: "SELECT * FROM api_secrets"
+  - name: join_disallowed_table
+    sql: "SELECT * FROM users u JOIN internal_audit a ON u.id = a.user_id"
+
+  # --- Category 10: Locking Reads ---
+  - name: for_update_lock
+    sql: "SELECT * FROM users FOR UPDATE"
+  - name: for_update_nowait
+    sql: "SELECT * FROM users FOR UPDATE NOWAIT"
+  - name: lock_in_share_mode
+    sql: "SELECT * FROM users LOCK IN SHARE MODE"
+  - name: for_share_lock
+    sql: "SELECT * FROM users FOR SHARE"
+
+  # --- Category 11: Variable Assignments & Injections ---
+  - name: select_variable_assignment
+    sql: "SELECT @x := 1"
+  - name: select_variable_assignment_in_where
+    sql: "SELECT * FROM users WHERE (@admin := 1) = 1"
+  - name: set_variable_statement
+    sql: "SET @x = 1"
+  - name: set_session_autocommit
+    sql: "SET autocommit = 0"
+
+  # --- Category 12: Administrative & Procedural Commands ---
+  - name: call_procedure
+    sql: "CALL reset_passwords()"
+  - name: do_statement
+    sql: "DO 1"
+  - name: handler_statement
+    sql: "HANDLER users OPEN"
+  - name: grant_statement
+    sql: "GRANT ALL PRIVILEGES ON *.* TO 'hacker'@'%'"
+  - name: revoke_statement
+    sql: "REVOKE ALL PRIVILEGES ON *.* FROM 'nl2sql_ro'@'%'"
+  - name: use_database
+    sql: "USE mysql"
+  - name: commit_statement
+    sql: "COMMIT"
+  - name: rollback_statement
+    sql: "ROLLBACK"
+  - name: kill_connection
+    sql: "KILL 12345"
+
+  # --- Category 13: CTE Wrapping Forbidden Constructs ---
+  - name: cte_wrapping_delete
+    sql: "WITH deleted AS (DELETE FROM users RETURNING *) SELECT * FROM deleted"
+  - name: cte_wrapping_insert
+    sql: "WITH inserted AS (INSERT INTO users (name) VALUES ('x')) SELECT * FROM inserted"
+  - name: cte_querying_system_schema
+    sql: "WITH sys_info AS (SELECT * FROM mysql.user) SELECT * FROM sys_info"
+
+  # --- Category 14: Non-SELECT Top Level ---
+  - name: show_tables
+    sql: "SHOW TABLES"
+  - name: show_databases
+    sql: "SHOW DATABASES"
+  - name: describe_users
+    sql: "DESCRIBE users"
+  - name: explain_query
+    sql: "EXPLAIN SELECT * FROM users"
+
+  # --- Category 15: Malformed and Null Byte Injection ---
+  - name: null_byte_injection
+    sql: "SELECT * FROM users\x00 WHERE id = 1"
+  - name: empty_query
+    sql: "   "
+  - name: only_comments
+    sql: "-- just a comment"
+  - name: broken_syntax
+    sql: "SELECT FROM WHERE"

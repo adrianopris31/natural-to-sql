@@ -1,0 +1,117 @@
+"""FastAPI main application entrypoint."""
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Literal
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from app.api.chat import router as chat_router
+from app.api.conversations import router as conversations_router
+from app.api.schema import router as schema_router
+from app.config import get_settings
+from app.core.db import check_db_health, close_engine
+from app.core.schema import get_schema_cache
+from app.llm.client import LLMClient, OllamaClient
+from app.store.database import close_app_db, init_app_db
+
+logger = logging.getLogger(__name__)
+
+
+def get_llm_client() -> LLMClient:
+    """Get Ollama client initialized with current settings."""
+    current_settings = get_settings()
+    return OllamaClient(
+        base_url=current_settings.OLLAMA_URL,
+        model=current_settings.OLLAMA_MODEL,
+        num_ctx=current_settings.OLLAMA_NUM_CTX,
+    )
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan context manager: manages DB pool, SQLite memory, and logging."""
+    logger.info("Starting Natural-to-SQL backend service")
+    try:
+        await init_app_db()
+    except Exception as exc:
+        logger.error("Failed to initialize SQLite application database: %s", exc)
+
+    db_ok, db_version = await check_db_health()
+    if db_ok:
+        logger.info(
+            "Connected to target database successfully",
+            extra={"db_version": db_version},
+        )
+        try:
+            cache = get_schema_cache()
+            schema = await cache.get_schema()
+            logger.info(
+                "Pre-warmed schema cache with %d tables",
+                len(schema.tables),
+                extra={"tables_count": len(schema.tables)},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not pre-warm schema cache",
+                extra={"error": str(exc)},
+            )
+    else:
+        logger.warning(
+            "Target database connection failed at startup",
+            extra={"db_version": db_version},
+        )
+
+    yield
+
+    logger.info("Shutting down Natural-to-SQL backend service")
+    await close_app_db()
+    await close_engine()
+
+
+settings = get_settings()
+
+app = FastAPI(
+    title="Natural-to-SQL API",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(chat_router)
+app.include_router(conversations_router)
+app.include_router(schema_router)
+
+
+class HealthResponse(BaseModel):
+    """Health check response conforming to PLAN.md §5."""
+
+    db: Literal["ok", "error"]
+    ollama: Literal["ok", "error"]
+    model: str
+    db_version: str
+
+
+@app.get("/api/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    """Return health status of database and LLM service."""
+    current_settings = get_settings()
+    db_ok, db_version = await check_db_health()
+    client = get_llm_client()
+    ollama_ok, _ = await client.check_health()
+
+    return HealthResponse(
+        db="ok" if db_ok else "error",
+        ollama="ok" if ollama_ok else "error",
+        model=current_settings.OLLAMA_MODEL,
+        db_version=db_version,
+    )
