@@ -176,21 +176,15 @@ copy .env.example .env
 ```
 Edit `.env` to point `TARGET_DB_URL` to your local Windows MySQL database (e.g. `mysql+asyncmy://nl2sql_ro:password@127.0.0.1:3306/your_database`).
 
-### 3. Start Application
-Open two PowerShell terminals:
+### 3. Start Application (Single Command)
+Just like `make dev` on macOS/Linux, Windows has a 1-command launcher:
+```powershell
+.\dev.ps1
+```
+*(Alternatively, you can simply double-click `dev.bat` in Windows File Explorer).*
 
-- **Terminal 1 (Backend):**
-  ```powershell
-  cd natural-to-sql\backend
-  uv sync
-  uv run uvicorn app.main:app --reload --port 8000
-  ```
-- **Terminal 2 (Frontend):**
-  ```powershell
-  cd natural-to-sql\frontend
-  pnpm install
-  pnpm dev
-  ```
+This automatically launches both the FastAPI backend (`http://127.0.0.1:8000`) and Next.js frontend (`http://localhost:3000`) concurrently.
+
 Open **[http://localhost:3000](http://localhost:3000)** in your browser!
 
 ---
