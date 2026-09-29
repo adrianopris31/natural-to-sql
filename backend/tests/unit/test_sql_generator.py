@@ -150,3 +150,37 @@ async def test_repair_sql_happy_path() -> None:
         settings=settings,
     )
     assert draft.sql == "SELECT id, name FROM users;"
+
+
+def test_sql_draft_accepts_legacy_single_sql_shape() -> None:
+    draft = SqlDraft.model_validate({"sql": "SELECT 1", "needs_clarification": False})
+    assert [q.sql for q in draft.queries] == ["SELECT 1"]
+    assert draft.sql == "SELECT 1"
+
+
+def test_sql_draft_multi_query_shape() -> None:
+    draft = SqlDraft.model_validate(
+        {
+            "queries": [
+                {"sql": "SELECT 1", "purpose": "a"},
+                {"sql": "SELECT 2", "purpose": "b"},
+            ]
+        }
+    )
+    assert [q.purpose for q in draft.queries] == ["a", "b"]
+    assert draft.sql == "SELECT 1"
+
+
+@pytest.mark.asyncio
+async def test_generate_caps_number_of_queries() -> None:
+    from app.config import Settings
+
+    client = FakeLLMClient(json_responses=[{"queries": [{"sql": f"SELECT {i}"} for i in range(5)]}])
+    draft = await generate(
+        question="q",
+        history=[],
+        schema=_get_mock_schema(),
+        client=client,
+        settings=Settings(MAX_QUERIES=2),
+    )
+    assert len(draft.queries) == 2

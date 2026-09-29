@@ -2,37 +2,37 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING
 
-from app.llm.prompts import build_answer_prompt
+from app.llm.prompts import AnswerResult, build_answer_prompt
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from app.config import Settings
-    from app.core.executor import ResultSet
     from app.llm.client import LLMClient
+
+# Low temperature: the answer must restate figures from the rows, not improvise.
+ANSWER_TEMPERATURE = 0.2
 
 
 async def stream_answer(
     question: str,
-    sql: str,
-    result: ResultSet,
+    results: list[AnswerResult],
     client: LLMClient,
     settings: Settings,
 ) -> AsyncIterator[str]:
-    """Stream natural language explanation of SQL query results."""
-    # Cap rows to ANSWER_MAX_ROWS for answer synthesis
-    rows_for_prompt = result.rows[: settings.ANSWER_MAX_ROWS]
+    """Stream one natural language answer covering every executed query."""
+    capped = [
+        dataclasses.replace(
+            res,
+            rows=res.rows[: settings.ANSWER_MAX_ROWS],
+            truncated=res.truncated or len(res.rows) > settings.ANSWER_MAX_ROWS,
+        )
+        for res in results
+    ]
+    messages = build_answer_prompt(question=question, results=capped)
 
-    messages = build_answer_prompt(
-        question=question,
-        sql=sql,
-        columns=result.columns,
-        rows=rows_for_prompt,
-        row_count=result.row_count,
-        truncated=result.truncated or (len(result.rows) > len(rows_for_prompt)),
-    )
-
-    async for chunk in client.stream_chat(messages=messages, temperature=0.7):
+    async for chunk in client.stream_chat(messages=messages, temperature=ANSWER_TEMPERATURE):
         yield chunk

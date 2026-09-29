@@ -3,9 +3,9 @@
 import pytest
 
 from app.config import Settings
-from app.core.executor import ResultSet
 from app.llm.answerer import stream_answer
 from app.llm.client import FakeLLMClient
+from app.llm.prompts import AnswerResult
 
 
 @pytest.mark.asyncio
@@ -13,12 +13,12 @@ async def test_stream_answer_happy_path() -> None:
     fake_client = FakeLLMClient(
         stream_responses=[["There ", "are ", "500 ", "registered ", "users."]]
     )
-    result = ResultSet(
+    result = AnswerResult(
+        sql="SELECT count(*) FROM users;",
         columns=["count"],
         rows=[[500]],
         row_count=1,
         truncated=False,
-        elapsed_ms=5.0,
     )
     settings = Settings()
 
@@ -26,8 +26,7 @@ async def test_stream_answer_happy_path() -> None:
         chunk
         async for chunk in stream_answer(
             question="How many users?",
-            sql="SELECT count(*) FROM users;",
-            result=result,
+            results=[result],
             client=fake_client,
             settings=settings,
         )
@@ -45,12 +44,12 @@ async def test_stream_answer_caps_rows() -> None:
     fake_client = FakeLLMClient(stream_responses=[["Summarized ", "top ", "items."]])
     # Generate 100 rows with ANSWER_MAX_ROWS set to 10
     rows = [[i, f"Product {i}"] for i in range(100)]
-    result = ResultSet(
+    result = AnswerResult(
+        sql="SELECT id, name FROM products;",
         columns=["id", "name"],
         rows=rows,
         row_count=100,
         truncated=False,
-        elapsed_ms=10.0,
     )
     settings = Settings(ANSWER_MAX_ROWS=10)
 
@@ -58,8 +57,7 @@ async def test_stream_answer_caps_rows() -> None:
         chunk
         async for chunk in stream_answer(
             question="List products",
-            sql="SELECT id, name FROM products;",
-            result=result,
+            results=[result],
             client=fake_client,
             settings=settings,
         )
@@ -70,3 +68,34 @@ async def test_stream_answer_caps_rows() -> None:
     # Row 9 should be in markdown table, but row 50 should not
     assert "Product 9" in prompt_content
     assert "Product 50" not in prompt_content
+
+
+@pytest.mark.asyncio
+async def test_stream_answer_multiple_results_and_failures() -> None:
+    fake_client = FakeLLMClient(stream_responses=[["ok"]])
+    results = [
+        AnswerResult(
+            sql="SELECT COUNT(*) AS n FROM orders",
+            columns=["n"],
+            rows=[[42]],
+            row_count=1,
+            truncated=False,
+            purpose="Order count",
+        ),
+        AnswerResult(
+            sql="SELECT name FROM products",
+            columns=[],
+            rows=[],
+            row_count=0,
+            truncated=False,
+            purpose="Products",
+            error="timed out",
+        ),
+    ]
+    _ = [c async for c in stream_answer("Q", results, fake_client, Settings())]
+    call = fake_client.recorded_stream_calls[0]
+    content = call["messages"][1]["content"]
+    assert "### Query 1 — Order count" in content
+    assert "### Query 2 — Products" in content
+    assert "FAILED: timed out" in content
+    assert call["temperature"] <= 0.3

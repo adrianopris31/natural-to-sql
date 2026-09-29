@@ -191,3 +191,19 @@ attacks:
     sql: "-- just a comment"
   - name: broken_syntax
     sql: "SELECT FROM WHERE"
+
+  # --- Category: review 2026-09-29 (H2/H3) ---
+  - name: cte_shadows_unknown_table_self_reference
+    sql: "WITH secret AS (SELECT * FROM secret) SELECT * FROM secret"
+  - name: cte_shadows_allowed_table
+    sql: "WITH users AS (SELECT * FROM users) SELECT * FROM users"
+  - name: cte_body_reads_unknown_table
+    sql: "WITH x AS (SELECT * FROM x) SELECT * FROM x"
+  - name: later_cte_self_reference_to_base_table
+    sql: "WITH a AS (SELECT id FROM users), b AS (SELECT * FROM b) SELECT * FROM a JOIN b ON a.id = b.id"
+  - name: cross_database_table
+    sql: "SELECT * FROM otherdb.users"
+  - name: cross_database_join
+    sql: "SELECT u.id FROM users u JOIN otherdb.accounts a ON a.id = u.id"
+  - name: catalog_qualified_table
+    sql: "SELECT * FROM cat.db.users"

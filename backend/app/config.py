@@ -14,13 +14,15 @@ class Settings(BaseSettings):
     """Application settings conforming to PLAN.md §6."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     TARGET_DB_URL: str = "mysql+asyncmy://nl2sql_ro:nl2sql_ro_pass@127.0.0.1:3307/ecommerce"
     APP_DB_PATH: str = "backend/data/app.db"
+    # JSONL mirror of the audit log: every generated/edited/executed SQL (git-ignored dir)
+    SQL_LOG_PATH: str = "backend/data/sql_log.jsonl"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
     OLLAMA_MODEL: str = "qwen2.5-coder:7b"
     OLLAMA_NUM_CTX: int = 8192
@@ -28,14 +30,52 @@ class Settings(BaseSettings):
     ANSWER_MAX_ROWS: int = 50
     QUERY_TIMEOUT_MS: int = 10000
     MAX_REPAIR_ATTEMPTS: int = 2
+    MAX_QUERIES: int = 3
+    # EXPLAIN gate: queries above these estimates are blocked (cannot be approved)
+    EXPLAIN_MAX_COST: float = 5_000_000.0
+    EXPLAIN_MAX_ROWS: int = 10_000_000
+    # EXPLAIN warnings: full scans / filesorts over this many estimated rows are flagged
+    EXPLAIN_WARN_ROWS: int = 100_000
     HISTORY_TURNS: int = 4
     SCHEMA_FULL_MAX_TABLES: int = 40
     SCHEMA_SAMPLE_VALUES: bool = True
-    ALLOWED_FUNCTIONS: list[str] = []
-    DENY_TABLES: list[str] = []
-    DENY_COLUMNS: list[str] = []
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    ALLOWED_FUNCTIONS: list[str] | str = []
+    DENY_TABLES: list[str] | str = []
+    DENY_COLUMNS: list[str] | str = []
+    CORS_ORIGINS: list[str] | str = ["http://localhost:3000"]
     NEXT_PUBLIC_API_BASE: str = "/api"
+
+    @field_validator("TARGET_DB_URL", mode="before")
+    @classmethod
+    def sanitize_target_db_url(cls, value: Any) -> str:
+        """Sanitize database URL by URL-encoding special characters in the password."""
+        import re
+        import urllib.parse
+
+        if isinstance(value, str):
+            value = value.strip()
+            # Match scheme://user:password@rest where password might contain @
+            match = re.match(r"^(.*?://)(.*?):(.*)@([^@]+)$", value)
+            if match:
+                prefix, user, password, rest = match.groups()
+                if "@" in password and "%40" not in password:
+                    encoded_password = urllib.parse.quote(password)
+                    return f"{prefix}{user}:{encoded_password}@{rest}"
+        return str(value)
+
+    @field_validator("APP_DB_PATH", "SQL_LOG_PATH", mode="after")
+    @classmethod
+    def resolve_app_db_path(cls, value: str) -> str:
+        """Resolve APP_DB_PATH relative to project root or backend directory."""
+        from pathlib import Path
+
+        p = Path(value)
+        if not p.is_absolute():
+            backend_dir = Path(__file__).resolve().parent.parent
+            if value.startswith("backend/"):
+                return str((backend_dir.parent / value).resolve())
+            return str((backend_dir / value).resolve())
+        return str(p.resolve())
 
     @field_validator(
         "CORS_ORIGINS",

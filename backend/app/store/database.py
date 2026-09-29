@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -26,6 +28,15 @@ logger = logging.getLogger(__name__)
 
 _app_engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+# Columns added after app.db files already existed: (table, column, SQLite type)
+_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("turns", "queries_json", "TEXT"),
+    ("audit_log", "stage", "VARCHAR(32)"),
+    ("audit_log", "row_count", "INTEGER"),
+    ("audit_log", "elapsed_ms", "FLOAT"),
+]
 
 
 def resolve_sqlite_url(db_path_str: str | None = None) -> str:
@@ -65,6 +76,12 @@ async def init_app_db(db_path_str: str | None = None) -> None:
     engine = get_app_engine(db_path_str)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight migrations for columns added after a DB file was created
+        for table, column, ddl in _MIGRATIONS:
+            existing = {row[1] for row in await conn.execute(text(f"PRAGMA table_info({table})"))}
+            if column not in existing:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                logger.info("Migrated app DB: added %s.%s", table, column)
     logger.info("Application SQLite database schema initialized")
 
 
@@ -166,6 +183,12 @@ async def update_turn(
         return turn
 
 
+async def get_turn(turn_id: str) -> Turn | None:
+    """Fetch a single turn by ID."""
+    async with get_app_session() as session:
+        return await session.get(Turn, turn_id)
+
+
 async def get_recent_turns(conversation_id: str, limit: int = 4) -> list[Turn]:
     """Retrieve the last N turns for a conversation ordered chronologically."""
     async with get_app_session() as session:
@@ -188,8 +211,12 @@ async def record_audit_log(
     raw_sql: str | None = None,
     safe_sql: str | None = None,
     reason: str | None = None,
+    stage: str | None = None,
+    row_count: int | None = None,
+    elapsed_ms: float | None = None,
 ) -> AuditLog:
-    """Insert an audit log entry for SQL validation or execution attempts."""
+    """Record one SQL lifecycle event in app.db and append it to the JSONL SQL log."""
+    resolved_stage = stage or ("validated" if accepted else "rejected")
     async with get_app_session() as session:
         log = AuditLog(
             turn_id=turn_id,
@@ -198,7 +225,70 @@ async def record_audit_log(
             safe_sql=safe_sql,
             accepted=accepted,
             reason=reason,
+            stage=resolved_stage,
+            row_count=row_count,
+            elapsed_ms=elapsed_ms,
         )
         session.add(log)
         await session.flush()
-        return log
+        entry = {
+            "ts": log.created_at.isoformat(),
+            "turn_id": turn_id,
+            "stage": resolved_stage,
+            "attempt": attempt,
+            "accepted": accepted,
+            "raw_sql": raw_sql,
+            "safe_sql": safe_sql,
+            "reason": reason,
+            "row_count": row_count,
+            "elapsed_ms": elapsed_ms,
+        }
+    await _append_sql_log(entry)
+    return log
+
+
+async def _append_sql_log(entry: dict[str, Any]) -> None:
+    """Append one JSON line to SQL_LOG_PATH (best effort; never breaks the request)."""
+    path = Path(get_settings().SQL_LOG_PATH)
+
+    def _write() -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, default=str) + "\n")
+
+    try:
+        await asyncio.to_thread(_write)
+    except OSError as exc:
+        logger.warning("Could not write SQL log file: %s", exc)
+
+
+async def list_audit_entries(limit: int = 200, turn_id: str | None = None) -> list[dict[str, Any]]:
+    """Newest-first SQL log entries joined with their turn's question/conversation."""
+    async with get_app_session() as session:
+        stmt = (
+            select(AuditLog, Turn.question, Turn.conversation_id)
+            .outerjoin(Turn, Turn.id == AuditLog.turn_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+        if turn_id:
+            stmt = stmt.where(AuditLog.turn_id == turn_id)
+        rows = (await session.execute(stmt)).all()
+        return [
+            {
+                "id": log.id,
+                "created_at": log.created_at.isoformat(),
+                "turn_id": log.turn_id,
+                "conversation_id": conversation_id,
+                "question": question,
+                "stage": log.stage or ("validated" if log.accepted else "rejected"),
+                "attempt": log.attempt,
+                "accepted": log.accepted,
+                "raw_sql": log.raw_sql,
+                "safe_sql": log.safe_sql,
+                "reason": log.reason,
+                "row_count": log.row_count,
+                "elapsed_ms": log.elapsed_ms,
+            }
+            for log, question, conversation_id in rows
+        ]

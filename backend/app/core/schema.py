@@ -48,6 +48,8 @@ class TableModel(BaseModel):
     comment: str | None = None
     approx_rows: int = 0
     columns: list[ColumnModel] = Field(default_factory=list)
+    # True when DENY_COLUMNS removed columns from this table (so SELECT * would leak them)
+    has_restricted_columns: bool = False
 
     def to_prompt_str(self) -> str:
         """Format table for prompt inclusion: table(cols, ...) -- comment."""
@@ -62,6 +64,8 @@ class SchemaModel(BaseModel):
     """Full database schema representation."""
 
     tables: list[TableModel] = Field(default_factory=list)
+    # Target database name; db-qualified table refs must match it
+    database: str | None = None
 
     def get_table(self, table_name: str) -> TableModel | None:
         """Look up a table by case-insensitive name."""
@@ -169,9 +173,13 @@ async def introspect_schema() -> SchemaModel:
 
             # Organize columns by table
             cols_by_table: dict[str, list[ColumnModel]] = {}
+            restricted_tables: set[str] = set()
             for row in col_rows:
                 tbl_name, col_name, col_type, is_null, col_key, col_comment = row
-                if tbl_name.lower() in deny_tables or col_name.lower() in deny_columns:
+                if tbl_name.lower() in deny_tables:
+                    continue
+                if col_name.lower() in deny_columns:
+                    restricted_tables.add(tbl_name)
                     continue
 
                 is_pk = col_key == "PRI"
@@ -210,11 +218,12 @@ async def introspect_schema() -> SchemaModel:
                         comment=t_comment if t_comment else None,
                         approx_rows=int(t_approx or 0),
                         columns=cols_by_table.get(t_name, []),
+                        has_restricted_columns=t_name in restricted_tables,
                     )
                 )
 
             logger.info("Schema introspected successfully: %d tables", len(tables))
-            return SchemaModel(tables=tables)
+            return SchemaModel(tables=tables, database=db_name)
 
     except Exception as exc:
         logger.error("Failed to introspect schema: %s", exc, extra={"error": str(exc)})

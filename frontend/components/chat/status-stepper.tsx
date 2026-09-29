@@ -1,7 +1,7 @@
 "use client";
 
 import { TurnStatus } from "@/lib/types";
-import { Check, Loader2, AlertCircle, Wrench } from "lucide-react";
+import { Check, Loader2, AlertCircle, Wrench, ShieldCheck, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StatusStepperProps {
@@ -17,6 +17,8 @@ interface StepDef {
 const STEPS: StepDef[] = [
   { key: "generating_sql", label: "Generating SQL" },
   { key: "validating", label: "Validating" },
+  { key: "explaining", label: "Checking plan" },
+  { key: "awaiting_approval", label: "Your approval" },
   { key: "executing", label: "Executing" },
   { key: "answering", label: "Answering" },
 ];
@@ -53,6 +55,30 @@ export function StatusStepper({ status, className }: StatusStepperProps) {
     );
   }
 
+  if (status === "refused") {
+    return (
+      <div
+        className={cn("flex items-center gap-1.5 text-xs text-destructive py-1", className)}
+        role="status"
+      >
+        <Ban className="size-4" />
+        <span className="font-medium">Not performed (read-only)</span>
+      </div>
+    );
+  }
+
+  if (status === "cancelled") {
+    return (
+      <div
+        className={cn("flex items-center gap-1.5 text-xs text-muted-foreground py-1", className)}
+        role="status"
+      >
+        <Ban className="size-4" />
+        <span className="font-medium">Cancelled</span>
+      </div>
+    );
+  }
+
   // If status is error, show error step
   if (status === "error") {
     return (
@@ -66,7 +92,7 @@ export function StatusStepper({ status, className }: StatusStepperProps) {
     );
   }
 
-  const stepOrder: TurnStatus[] = ["generating_sql", "validating", "executing", "answering"];
+  const stepOrder: TurnStatus[] = STEPS.map((s) => s.key);
   const currentIdx = stepOrder.indexOf(status === "repairing" ? "validating" : status);
 
   return (
@@ -98,6 +124,8 @@ export function StatusStepper({ status, className }: StatusStepperProps) {
             >
               {isPast ? (
                 <Check className="size-3 text-emerald-600 dark:text-emerald-400 stroke-[3]" />
+              ) : isCurrent && step.key === "awaiting_approval" ? (
+                <ShieldCheck className="size-3 text-primary" />
               ) : isRepairing ? (
                 <Wrench className="size-3 animate-spin text-amber-600" />
               ) : isCurrent ? (

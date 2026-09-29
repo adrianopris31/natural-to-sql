@@ -174,3 +174,61 @@ def test_deny_columns_enforced() -> None:
     settings = Settings(DENY_COLUMNS=["email"])
     with pytest.raises(ValidationError, match="denied by configuration"):
         validate("SELECT id, email FROM users", schema=schema, settings=settings)
+
+
+def test_safesql_cannot_be_forged_without_token() -> None:
+    """H4: omitting the token must not fall back to a valid default."""
+    with pytest.raises(TypeError):
+        SafeSQL(sql="DROP TABLE users", original_sql="")  # type: ignore[call-arg]
+
+
+def _schema_with_restricted_users() -> SchemaModel:
+    schema = _build_test_schema()
+    users = schema.get_table("users")
+    assert users is not None
+    users.has_restricted_columns = True
+    return schema
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM users",
+        "SELECT u.* FROM users u",
+        "SELECT o.id, u.* FROM orders o JOIN users u ON u.id = o.user_id",
+        "SELECT x.* FROM (SELECT * FROM users) x",
+        "WITH x AS (SELECT * FROM users) SELECT id FROM x",
+    ],
+)
+def test_star_rejected_on_tables_with_restricted_columns(sql: str) -> None:
+    """H1: SELECT * must not expose columns removed by DENY_COLUMNS."""
+    settings = Settings(DENY_COLUMNS=["password"], DENY_TABLES=[])
+    with pytest.raises(ValidationError, match="restricted columns"):
+        validate(sql, schema=_schema_with_restricted_users(), settings=settings)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT COUNT(*) FROM users",
+        "SELECT id, name FROM users",
+        "SELECT * FROM orders",
+    ],
+)
+def test_star_allowed_when_no_restricted_columns_involved(sql: str) -> None:
+    settings = Settings(DENY_COLUMNS=["password"], DENY_TABLES=[])
+    validate(sql, schema=_schema_with_restricted_users(), settings=settings)
+
+
+def test_target_database_qualified_table_allowed() -> None:
+    """H3: qualifying with the configured target DB itself is fine."""
+    schema = _build_test_schema()
+    schema.database = "ecommerce"
+    validate("SELECT id FROM ecommerce.users", schema=schema, settings=Settings(DENY_TABLES=[]))
+
+
+def test_denied_table_via_cte_shadowing_rejected() -> None:
+    """H2 repro from review: CTE named like a denied table."""
+    sql = "WITH payments AS (SELECT * FROM payments) SELECT * FROM payments"
+    with pytest.raises(ValidationError):
+        validate(sql, schema=_build_test_schema(), settings=Settings(DENY_TABLES=["payments"]))

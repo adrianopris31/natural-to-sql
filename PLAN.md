@@ -8,11 +8,13 @@ Task IDs (`P<phase>.<n>`) are referenced in `PROGRESS.md`. Do the phases in orde
 **v1 goals**
 - A chat UI where the user asks questions in natural language about their existing MySQL 9.0.1 DB.
 - Each answer shows: the **generated SQL** (collapsible, highlighted), the **result table** and a **natural-language answer**.
+- **Preview before running** (added 2026-09-29, Phase 8): every generated query is shown with an **EXPLAIN** summary and runs only after the user clicks Run. The user can edit or cancel it. Expensive queries are blocked.
+- **Multiple queries** (Phase 8): up to 3 independent SELECTs for questions with separate parts, each with its own table, answered together.
 - **Conversation memory**: follow-ups work ("now only for 2025", "and the bottom 5?").
 - Fully local: Ollama + `qwen2.5-coder`.
 - Safe by construction: it can never modify data, never run away on cost or time, and never leaks outside the allowed tables.
 
-**Non-goals (v1)**: auth or multi-user, charts, writes of any kind, multiple DB engines, cloud LLMs.
+**Non-goals (v1)**: auth or multi-user, charts, writes of any kind, multiple DB engines, cloud LLMs, auto-running SQL without approval, chained queries (one query using another's results).
 
 ---
 
@@ -28,20 +30,32 @@ Next.js (3000) ──POST /api/chat (SSE)──▶ FastAPI (127.0.0.1:8000)
  audit log                                                  validator, executor
 ```
 
-### Request pipeline (`services/chat.py`)
-1. **Load context**: the conversation's last `HISTORY_TURNS` (default 4) turns → `(question, sql, 1-line result summary)`.
-2. **Schema context**: the cached schema (P1.3). If the schema has more than `SCHEMA_FULL_MAX_TABLES` (default 40) tables → **table selection** (P6.1) picks the top-k relevant tables. Otherwise the full compact schema is used.
-3. **Generate SQL**: Ollama structured output →
-   `{"sql": str|null, "reasoning": str, "needs_clarification": bool, "clarification_question": str|null}`
-   - If `needs_clarification` is true, stream the question back to the user and stop (no SQL runs).
-4. **Validate** (`core/validator.py`) → returns the *re-rendered* safe SQL or a `ValidationError(reason)`.
-5. **Execute** (`core/executor.py`) → `ResultSet(columns, rows, row_count, truncated, elapsed_ms)`.
-6. **Repair loop**: if step 4 or 5 fails, send the error message + the bad SQL back to the LLM. Allow at most `MAX_REPAIR_ATTEMPTS` (2), then return a friendly error that includes the last SQL.
-7. **Answer**: a second LLM call (streamed) with the question, the SQL, the columns, the first `ANSWER_MAX_ROWS` (50) rows and the row count / truncation flag. The rules: use only these rows, say so when they're empty, and don't invent numbers.
-8. **Persist** the turn (question, SQL, status, row_count, answer, timings) and write an **audit log** row (every SQL the LLM generated, whether it was accepted or rejected, and the reason).
+### Request pipeline (`services/chat.py`) — two phases, approval required
+**Phase A: plan (`POST /api/chat`, `process_chat`). Never executes SQL.**
+0. **Write-request refusal**: if the question clearly asks to change data (`core/intent.py`, e.g. "delete the user X", "can you drop…"), stream `refused` immediately. **No LLM call, no SQL.** The model can also set `write_intent: true` → `refused`. Logged with stage `refused`.
+1. **Load context**: the last `HISTORY_TURNS` turns *with status `done`* → `(question, sql, 1-line result summary)`. Cancelled or unapproved turns are excluded.
+2. **Schema context**: the cached schema (P1.3). If the schema has more than `SCHEMA_FULL_MAX_TABLES` tables → **table selection** (P6.1).
+3. **Generate**: Ollama structured output →
+   `{"queries": [{"sql": str, "purpose": str}] (1..MAX_QUERIES, independent SELECTs), "reasoning": str, "needs_clarification": bool, "clarification_question": str|null}`.
+   The legacy `{"sql": ...}` shape is accepted as one query. If `needs_clarification`, stream the question and stop.
+4. **For each query**: **Validate** (`core/validator.py`) → **EXPLAIN** (`core/explain.py`, `EXPLAIN FORMAT=JSON` in a READ ONLY txn; this does not execute the query). A validation or EXPLAIN error (e.g. an unknown column) goes to the **repair loop** (≤ `MAX_REPAIR_ATTEMPTS`).
+5. **Risk flags** (`core/risk.py`) per query: `UNSAFE_DRAFT_BLOCKED` (high: the model first wrote e.g. a DELETE), `DRAFT_REJECTED` (medium), `CARTESIAN_JOIN` (high), `EXPLAIN_BLOCKED` (high), `EXPLAIN_WARNING` (medium), `LARGE_RESULT` (medium: no LIMIT from the model and est. rows > MAX_ROWS), `WRITE_WORDING` (medium: question mentions delete/update…), `USER_EDITED` (info). `level` = max severity. A high level makes the UI require a "Run anyway" confirmation.
+6. **Persist** the turn with `status=awaiting_approval` and `queries_json` (sql, purpose, explain, risk), then stream `preview`. **Stop.**
 
-### SSE event stream (`POST /api/chat`)
-`status` (`generating_sql` | `validating` | `executing` | `repairing` | `answering`) → `sql` → `result` → `answer_delta`* → `done` | `clarification` | `error`
+**Phase B: run (`POST /api/chat/{turn_id}/run`, `run_approved_turn`). Only after the user clicks Run.**
+6. Only allowed when `status == awaiting_approval` (so it runs once). Optional `queries[i]` = user-edited SQL.
+7. **Re-validate + re-EXPLAIN every query** (edited SQL gets no LLM repair). Any rejection or a `blocked` EXPLAIN → error, **nothing runs**, and the turn stays `awaiting_approval`.
+8. **Execute** each (`core/executor.py`) → one `result` event per query (a per-query error is reported and the others still run).
+9. **Answer**: one streamed LLM call over all results (temp 0.2, ≤ `ANSWER_MAX_ROWS` rows each, grounded only in the rows).
+10. **Persist** results + answer (`status=done`). The **audit log** records every SQL (LLM or user-edited), accepted or rejected, with the reason.
+
+`POST /api/chat/{turn_id}/cancel` → `status=cancelled`.
+
+### SSE events
+- Plan: `status` (`generating_sql` | `validating` | `explaining` | `repairing`) → `preview {conversation_id, turn_id, queries:[{index, purpose, sql, explain, risk}]}` | `refused {conversation_id, turn_id, message}` | `clarification` (+`done`; the client must keep the clarification status) | `error`
+- Run: `status` (`validating` | `explaining` | `executing` | `answering`) → `result {index, sql, columns, rows, row_count, truncated, error}`* → `answer_delta`* → `done` | `error {message, code, index?}`
+- Error codes: `VALIDATION_FAILED`, `EXPLAIN_FAILED`, `BLOCKED_BY_EXPLAIN`, `REPAIR_FAILED`, `LLM_ERROR`, `NO_QUERY`, `INVALID_STATE`, `NOT_FOUND`, `EXECUTION_FAILED`, `UNEXPECTED_ERROR`.
+- The stream sends an SSE comment `: ping` every 10s while idle (proxy keepalive).
 
 ---
 
@@ -56,10 +70,14 @@ Next.js (3000) ──POST /api/chat (SSE)──▶ FastAPI (127.0.0.1:8000)
 | L5 Statement type | The root must be `exp.Select`, or `exp.Union`/`Intersect`/`Except` of selects (CTEs `WITH` are allowed). |
 | L6 AST walk (deny) | Reject any node of type Insert/Update/Delete/Merge/Create/Drop/Alter/TruncateTable/Command/Set/Use/Transaction/Commit/Rollback/LoadData/Grant; `SELECT … INTO` (OUTFILE/DUMPFILE/@var); locking reads (`FOR UPDATE`, `LOCK IN SHARE MODE`); variable assignment `@x :=`. |
 | L7 Function denylist | `SLEEP, BENCHMARK, LOAD_FILE, GET_LOCK, RELEASE_LOCK, IS_FREE_LOCK, RELEASE_ALL_LOCKS, MASTER_POS_WAIT, SOURCE_POS_WAIT, SYS_EXEC, SYS_EVAL`, and any function name that is not recognized (`exp.Anonymous`) unless it is on a configurable allowlist. |
-| L8 Table allowlist | Every `exp.Table` must resolve to a table in the introspected schema (CTE names are allowed). Schemas `mysql`, `information_schema`, `performance_schema` and `sys` are always rejected. Optional `DENY_TABLES` / `DENY_COLUMNS` env (empty by default, since the user said there's no PII concern; the hook exists anyway). |
+| L8 Table allowlist | Every real `exp.Table` must be in the introspected schema. CTE refs are resolved by scope (a non-recursive CTE's own body sees the base table), and CTE names may not shadow real tables. Any db/catalog qualifier other than the target DB is rejected (system schemas always). `DENY_TABLES`/`DENY_COLUMNS`: denied columns can't be named, and `*`/`t.*` is rejected on tables that have denied columns. |
 | L9 Row cap | If there is no `LIMIT`, or `LIMIT > MAX_ROWS` (default 500), the outer LIMIT is set to `MAX_ROWS`. The executor also stops fetching at `MAX_ROWS + 1` so it can set `truncated`. |
 | L10 Re-render | Execute `ast.sql(dialect="mysql")`, **never the raw LLM string**. This strips comments and stacked-statement tricks. |
 | L11 Output limits | Truncate cell values longer than 500 chars. Convert bytes/Decimal/datetime to JSON-safe values. |
+| L12 EXPLAIN gate | `EXPLAIN FORMAT=JSON` before preview and again before run. `blocked` if cost > `EXPLAIN_MAX_COST` or estimated rows > `EXPLAIN_MAX_ROWS`. Warnings for full scans/filesorts ≥ `EXPLAIN_WARN_ROWS`. |
+| L13 Human approval | No LLM-generated SQL executes until the user approves the preview (`/run`). Edited SQL passes L4–L12 again. |
+| L14 Write-request refusal + risk flags | Data-changing requests are refused up front with an explicit "Not performed (read-only)" message (no confirmation questions). Previews carry risk flags; high risk = red banner + confirmation. |
+| Audit | Every SQL lifecycle event is logged: `validated`, `rejected`, `explain_failed`, `blocked`, `edited`, `executed` (row_count, elapsed_ms), `execution_failed`, `refused`. Stored in `app.db` `audit_log` and appended as JSONL to `SQL_LOG_PATH`. Shown in the UI "SQL log" panel via `GET /api/audit`. |
 
 The validator is a **pure function** (`validate(sql, schema, settings) -> SafeSQL | ValidationError`), with no I/O, so it can be tested exhaustively.
 
@@ -71,7 +89,8 @@ The validator is a **pure function** (`validate(sql, schema, settings) -> SafeSQ
 - **History block**: the previous turns as `Q: … / SQL: … / Result: <n rows, cols …>`.
 - **Few-shot**: 3 generic examples (top-N with a join, group by date, a follow-up rewrite).
 - **Repair prompt**: the original question, the bad SQL, the exact error, and "return corrected SQL".
-- **Answer prompt**: the question, the SQL, the rows as a compact markdown table, the row count and truncation flag. The answer must be concise, cite figures from the rows only, and mention truncation.
+- **Answer prompt**: the question plus one section per query (purpose, SQL, rows as a markdown table, row count and truncation flag, or FAILED + error). One concise answer covering all parts, citing only figures from the rows. Temperature 0.2.
+- **SQL prompt v1.1**: `queries` list format, "one query unless the question has separate parts" (≤ MAX_QUERIES, independent), and never `SELECT *`.
 - Every prompt is a versioned constant (`PROMPT_VERSION`), which is stored on each turn for eval comparison.
 
 ---
@@ -79,9 +98,12 @@ The validator is a **pure function** (`validate(sql, schema, settings) -> SafeSQ
 ## 5. API contract (update this section before changing the API)
 | Method | Path | Body / Response |
 |---|---|---|
-| POST | `/api/chat` | `{conversation_id?: str, message: str}` → SSE (see §2). The first event includes `conversation_id`. |
+| POST | `/api/chat` | `{conversation_id?: str, message: str}` → SSE plan phase, ending in `preview` (see §2). Never executes. |
+| POST | `/api/chat/{turn_id}/run` | `{queries?: (str|null)[]}` (edited SQL per index) → SSE run phase (see §2). Only when `awaiting_approval`. |
+| POST | `/api/chat/{turn_id}/cancel` | 204; 409 if the turn is not awaiting approval |
+| GET | `/api/audit?limit=200&turn_id=` | newest-first `[{id, created_at, turn_id, conversation_id, question, stage, attempt, accepted, raw_sql, safe_sql, reason, row_count, elapsed_ms}]` |
 | GET | `/api/conversations` | `[{id, title, updated_at}]` |
-| GET | `/api/conversations/{id}` | `{id, title, turns:[{id, question, sql, columns, rows, row_count, truncated, answer, status, error, created_at}]}` |
+| GET | `/api/conversations/{id}` | `{id, title, turns:[{id, question, sql, columns, rows, row_count, truncated, queries: [{index, purpose, sql, explain, columns, rows, row_count, truncated, error}] | null, answer, status, error, created_at}]}`. Status adds `awaiting_approval`, `cancelled`, `refused`. Each query has `risk: {level, flags:[{code, severity, message}]}`. |
 | DELETE | `/api/conversations/{id}` | 204 |
 | GET | `/api/schema` | the compact schema (tables, columns) for the UI sidebar |
 | POST | `/api/schema/refresh` | re-introspect → `{tables: n}` |
@@ -95,6 +117,7 @@ Rows are stored with the turn (capped at MAX_ROWS), so reopening a conversation 
 ```
 TARGET_DB_URL=mysql+asyncmy://nl2sql_ro:CHANGE_ME@127.0.0.1:3306/your_db
 APP_DB_PATH=backend/data/app.db
+SQL_LOG_PATH=backend/data/sql_log.jsonl   # JSONL audit of every SQL (git-ignored dir)
 OLLAMA_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5-coder:7b
 OLLAMA_NUM_CTX=8192             # 16 GB Mac; raise only if the schema prompt doesn't fit
@@ -102,6 +125,10 @@ MAX_ROWS=500
 ANSWER_MAX_ROWS=50
 QUERY_TIMEOUT_MS=10000
 MAX_REPAIR_ATTEMPTS=2
+MAX_QUERIES=3                    # independent SELECTs per question
+EXPLAIN_MAX_COST=5000000         # blocked above this EXPLAIN cost
+EXPLAIN_MAX_ROWS=10000000        # blocked above this estimated row count
+EXPLAIN_WARN_ROWS=100000         # warn on full scans/filesorts at or above this
 HISTORY_TURNS=4
 SCHEMA_FULL_MAX_TABLES=40
 SCHEMA_SAMPLE_VALUES=true
@@ -171,6 +198,25 @@ NEXT_PUBLIC_API_BASE=/api        # frontend; proxied via next.config rewrites �
 - **P7.2** `make dev` / a `justfile` that starts the backend and the frontend together.
 - **P7.3** Final security review against §3 and a check of the audit log.
 
+### Phase 8 — Safety review fixes + preview/approval, EXPLAIN, multi-query (added 2026-09-29, built by Claude)
+Status: ✅ = done (committed on branch `feat/sql-preview-safety`), ⏳ = open. Details of what changed: PROGRESS.md → "CHANGES MADE BY CLAUDE".
+- ✅ **P8.1** SSE heartbeat (`: ping` every 10s) + Next `proxyTimeout` + frontend stream-cutoff error. Fixes the UI hanging on "generating" on the real DB.
+- ✅ **P8.2** Validator holes H1–H5 fixed (star vs DENY_COLUMNS, CTE shadowing, cross-DB refs, forgeable SafeSQL, typed-function names), with attack/safe corpus cases.
+- ✅ **P8.3** `core/explain.py`: EXPLAIN FORMAT=JSON summary + gate (L12). Settings `EXPLAIN_MAX_COST`, `EXPLAIN_MAX_ROWS`, `EXPLAIN_WARN_ROWS`.
+- ✅ **P8.4** Multi-query generation: `SqlDraft.queries` (≤ `MAX_QUERIES`), prompt v1.1, multi-result answer prompt (temp 0.2).
+- ✅ **P8.5** Two-phase pipeline + API: plan → `preview` (no execution); `POST /api/chat/{id}/run` (re-validate + re-EXPLAIN, edits allowed, blocked refused); `/cancel`; `turns.queries_json` + auto-migration; history = done turns only.
+- ✅ **P8.6** Frontend: preview card (Edit/Revert/Run/Cancel), EXPLAIN summary, per-query results, new statuses, `runTurn`/`cancelTurn`.
+- ✅ **P8.7** Tests: EXPLAIN unit tests, rewritten pipeline integration tests, QueryPreview/use-chat/api/sse tests (backend 257, frontend 50).
+- ⏳ **P8.8** Live check with Ollama on `easybiz_data_1`: plan → preview → Run / Edit / Cancel in the UI. Only scripted-model runs have been verified so far.
+- ⏳ **P8.9** Re-run evals with prompt v1.1 (`make eval`); accept only if no regression > 2 points vs v1.0 (87.5%).
+- ⏳ **P8.10** Playwright e2e (`frontend/tests/e2e/`, currently missing): ask → preview → Run → tables → answer; Edit; Cancel; blocked; stream cutoff.
+- ⏳ **P8.11** Tune EXPLAIN thresholds after observing real query costs (real DB so far: 5–230; defaults are 5M cost / 10M rows).
+- ✅ **P8.12** Write-request refusal: `core/intent.py` (keyword check, before the LLM) + `SqlDraft.write_intent` (prompt v1.2 rule 10 + few-shot) → `refused` event/status. Fixes "delete user" showing "Completed" (the model had asked "Are you sure you want to delete…?" and the frontend's `done` hid the clarification).
+- ✅ **P8.13** Risk flags: `core/risk.py` → `queries[].risk`; UI red banner, per-query flags, "Run anyway" + confirmation checkbox for high risk.
+- ✅ **P8.14** SQL audit log: `audit_log` + `stage/row_count/elapsed_ms` (auto-migrated), JSONL mirror `SQL_LOG_PATH`, `GET /api/audit`, UI "SQL log" panel (header button).
+- ✅ **P8.15** Frontend fix: `done` after `clarification`/`refused` no longer overwrites the status.
+- ⏳ **P8.16** Re-run evals with prompt v1.2 (includes write-intent rule); check the keyword refusal has no false positives on real questions.
+
 ---
 
 ## 8. Definition of done (v1)
@@ -179,12 +225,15 @@ NEXT_PUBLIC_API_BASE=/api        # frontend; proxied via next.config rewrites �
 - The attack corpus is 100% rejected, and the RO-user integration test is green.
 - Execution accuracy on the eval set is ≥ 80% with the chosen model.
 - The app works against the user's real MySQL DB through the RO user.
+- No generated SQL executes without the user's approval. Blocked (EXPLAIN) queries can't run unless edited, and edited SQL passes every layer again.
 
 ## 9. Risks
 | Risk | Mitigation |
 |---|---|
 | A 7B model is weak on complex joins or large schemas | Table selection (P6.1), FK hints in the schema prompt, the repair loop, and the 14b option |
 | Dev/prod version drift | The dev container is pinned to MySQL 9.0 to match prod 9.0.1 |
+| Approval step adds a click; EXPLAIN adds latency | EXPLAIN takes milliseconds; the approval is required by the user (always preview) |
+| Local LLM generation takes 30s+ and proxies drop idle SSE | `: ping` heartbeat every 10s and Next `proxyTimeout` 300s (P8.1) |
 | RAM pressure on the 16 GB Mac (Ollama + Docker + Next dev) | Use the 7b model, `OLLAMA_NUM_CTX=8192` by default, and give Docker ≤ 4 GB |
 | Slow queries on a big production DB | The timeout, the LIMIT cap and the RO user; recommend pointing at a replica |
 | Hallucinated answers | The answer prompt is grounded in rows only; the UI always shows the SQL and the table |

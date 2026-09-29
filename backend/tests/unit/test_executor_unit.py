@@ -9,7 +9,7 @@ import pytest
 
 from app.config import get_settings
 from app.core.executor import _sanitize_cell, run
-from app.core.validator import SafeSQL
+from app.core.validator import _VALIDATOR_TOKEN, SafeSQL
 from app.errors import ExecutionError
 
 
@@ -73,6 +73,6 @@ async def test_run_timeout_error() -> None:
     engine.connect.return_value = ctx
 
     with patch("asyncio.wait_for", side_effect=TimeoutError("Execution timed out")):
-        safe_sql = SafeSQL(sql="SELECT 1;", original_sql="SELECT 1;")
+        safe_sql = SafeSQL(sql="SELECT 1;", original_sql="SELECT 1;", _token=_VALIDATOR_TOKEN)
         with pytest.raises(ExecutionError, match="timed out"):
             await run(safe_sql, engine, settings)

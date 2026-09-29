@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from app.errors import LLMError
@@ -20,13 +20,37 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SqlDraft(BaseModel):
-    """Structured response from LLM containing generated SQL or clarification request."""
+class QueryDraft(BaseModel):
+    """One independent SELECT with a short description of what it answers."""
 
-    sql: str | None = None
+    sql: str
+    purpose: str = ""
+
+
+class SqlDraft(BaseModel):
+    """Structured LLM response: 1..MAX_QUERIES independent queries, or a clarification."""
+
+    queries: list[QueryDraft] = Field(default_factory=list)
     reasoning: str = ""
+    # True when the user asks to change data (delete/update/insert/...): the app refuses.
+    write_intent: bool = False
     needs_clarification: bool = False
     clarification_question: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_single_sql(cls, data: Any) -> Any:
+        """Accept the legacy/single shape {"sql": "..."} as one query."""
+        if isinstance(data, dict) and "queries" not in data:
+            data = dict(data)
+            legacy_sql = data.pop("sql", None)
+            data["queries"] = [{"sql": legacy_sql, "purpose": ""}] if legacy_sql else []
+        return data
+
+    @property
+    def sql(self) -> str | None:
+        """First query's SQL (single-query callers such as evals)."""
+        return self.queries[0].sql if self.queries else None
 
 
 async def generate(
@@ -38,7 +62,6 @@ async def generate(
     today_date: str | None = None,
 ) -> SqlDraft:
     """Generate SQL from natural language question with structured JSON validation and 1 retry."""
-    _ = settings
     date_str = today_date or datetime.date.today().isoformat()
     schema_text = schema.to_prompt()
     messages = build_sql_prompt(
@@ -46,6 +69,7 @@ async def generate(
         history=history,
         schema_text=schema_text,
         today_date=date_str,
+        max_queries=settings.MAX_QUERIES,
     )
     json_schema = SqlDraft.model_json_schema()
 
@@ -56,7 +80,15 @@ async def generate(
                 schema=json_schema,
                 temperature=0.0,
             )
-            return SqlDraft.model_validate(raw_json)
+            draft = SqlDraft.model_validate(raw_json)
+            if len(draft.queries) > settings.MAX_QUERIES:
+                logger.warning(
+                    "LLM returned %d queries; keeping first %d",
+                    len(draft.queries),
+                    settings.MAX_QUERIES,
+                )
+                draft.queries = draft.queries[: settings.MAX_QUERIES]
+            return draft
         except (PydanticValidationError, LLMError) as exc:
             if attempt == 0:
                 logger.warning(

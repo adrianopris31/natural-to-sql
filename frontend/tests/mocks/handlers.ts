@@ -4,6 +4,10 @@ import {
   ConversationDetail,
   ConversationSummary,
   HealthResponse,
+  AuditEntry,
+  RiskReport,
+  RunRequest,
+  TurnQuery,
 } from "@/lib/types";
 
 export const mockConversations: ConversationSummary[] = [
@@ -84,6 +88,81 @@ export const mockHealth: HealthResponse = {
   db_version: "9.0.1",
 };
 
+export function mockPreviewQuery(
+  index: number,
+  sql: string,
+  purpose: string,
+  blocked = false,
+  risk: RiskReport = { level: "none", flags: [] }
+): TurnQuery {
+  return {
+    index,
+    purpose,
+    sql,
+    risk,
+    explain: {
+      cost: blocked ? 9_000_000 : 51.25,
+      estimated_rows: blocked ? 9_000_000 : 10,
+      tables: [{ table: "users", access_type: "index", key: "PRIMARY", rows_examined: 10, rows_produced: 10 }],
+      warnings: [],
+      blocked,
+      block_reason: blocked ? "Estimated cost 9,000,000 exceeds the limit of 5,000,000" : null,
+    },
+    columns: null,
+    rows: null,
+    row_count: null,
+    truncated: null,
+    error: null,
+  };
+}
+
+export const mockAuditEntries: AuditEntry[] = [
+  {
+    id: "a2",
+    created_at: "2026-09-29T09:00:02Z",
+    turn_id: "t1",
+    conversation_id: "c1",
+    question: "Show me user number one",
+    stage: "executed",
+    attempt: 0,
+    accepted: true,
+    raw_sql: "SELECT id FROM users WHERE id = 1",
+    safe_sql: "SELECT id FROM users WHERE id = 1 LIMIT 501",
+    reason: null,
+    row_count: 1,
+    elapsed_ms: 4.2,
+  },
+  {
+    id: "a1",
+    created_at: "2026-09-29T09:00:01Z",
+    turn_id: "t1",
+    conversation_id: "c1",
+    question: "Show me user number one",
+    stage: "rejected",
+    attempt: 0,
+    accepted: false,
+    raw_sql: "DELETE FROM users WHERE id = 1",
+    safe_sql: null,
+    reason: "Forbidden statement type: expected SELECT, got Delete",
+    row_count: null,
+    elapsed_ms: null,
+  },
+];
+
+/** Last body received by the /run mock, for assertions. */
+export const lastRunRequest: { body: RunRequest | null } = { body: null };
+
+function sseResponse(chunks: string[]): HttpResponse<ReadableStream<Uint8Array>> {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const c of chunks) controller.enqueue(encoder.encode(c));
+      controller.close();
+    },
+  });
+  return new HttpResponse(stream, { headers: { "Content-Type": "text/event-stream" } });
+}
+
 export const handlers = [
   // Health
   http.get("/api/health", () => {
@@ -135,6 +214,26 @@ export const handlers = [
               'event: clarification\ndata: {"question":"Did you mean total users or active users?"}\n\n'
             )
           );
+          // Real backend sends `done` after a clarification; it must not hide it
+          controller.enqueue(
+            encoder.encode(
+              `event: done\ndata: {"conversation_id":"${conversationId}","turn_id":"turn-clar-1"}\n\n`
+            )
+          );
+          controller.close();
+          return;
+        }
+
+        if (message.toLowerCase().startsWith("delete")) {
+          controller.enqueue(
+            encoder.encode(
+              `event: refused\ndata: ${JSON.stringify({
+                conversation_id: conversationId,
+                turn_id: "turn-refused-1",
+                message: "Not performed: this assistant is read-only and cannot delete, change or add data.",
+              })}\n\n`
+            )
+          );
           controller.close();
           return;
         }
@@ -152,24 +251,32 @@ export const handlers = [
           return;
         }
 
-        // Standard sequence
+        if (message.toLowerCase().includes("cutoff")) {
+          // Simulates a proxy closing the stream mid-generation (no terminal event)
+          controller.enqueue(encoder.encode(": ping\n\n"));
+          controller.enqueue(encoder.encode("event: status\ndata: generating_sql\n\n"));
+          controller.close();
+          return;
+        }
+
+        // Standard sequence: plan → preview (nothing executes until /run)
+        const queries =
+          message.toLowerCase().includes("two things")
+            ? [mockPreviewQuery(0, "SELECT id, name FROM users LIMIT 10", "Users"),
+               mockPreviewQuery(1, "SELECT COUNT(*) AS n FROM orders", "Order count")]
+            : [mockPreviewQuery(0, "SELECT id, name FROM users LIMIT 10", "Users",
+                message.toLowerCase().includes("blocked"))];
+        controller.enqueue(encoder.encode(": ping\n\n"));
         controller.enqueue(encoder.encode("event: status\ndata: generating_sql\n\n"));
         controller.enqueue(encoder.encode("event: status\ndata: validating\n\n"));
-        controller.enqueue(encoder.encode("event: status\ndata: executing\n\n"));
-        controller.enqueue(
-          encoder.encode("event: sql\ndata: SELECT id, name FROM users LIMIT 10\n\n")
-        );
+        controller.enqueue(encoder.encode("event: status\ndata: explaining\n\n"));
         controller.enqueue(
           encoder.encode(
-            'event: result\ndata: {"columns":["id","name"],"rows":[[1,"Alice"],[2,"Bob"]],"row_count":2,"truncated":false}\n\n'
-          )
-        );
-        controller.enqueue(encoder.encode("event: status\ndata: answering\n\n"));
-        controller.enqueue(encoder.encode("event: answer_delta\ndata: Found 2 \n\n"));
-        controller.enqueue(encoder.encode("event: answer_delta\ndata:users in the database.\n\n"));
-        controller.enqueue(
-          encoder.encode(
-            `event: done\ndata: {"conversation_id":"${conversationId}","turn_id":"turn-mock-456"}\n\n`
+            `event: preview\ndata: ${JSON.stringify({
+              conversation_id: conversationId,
+              turn_id: "turn-mock-456",
+              queries,
+            })}\n\n`
           )
         );
         controller.close();
@@ -183,5 +290,41 @@ export const handlers = [
         Connection: "keep-alive",
       },
     });
+  }),
+
+  // Approve & run a previewed turn
+  http.post("/api/chat/:turnId/run", async ({ request, params }) => {
+    const body = (await request.json()) as RunRequest;
+    lastRunRequest.body = body;
+    const edited = body.queries?.[0];
+    if (edited && edited.toUpperCase().includes("DROP")) {
+      return sseResponse([
+        "event: status\ndata: validating\n\n",
+        'event: error\ndata: {"message":"Query 1: SQL rejected for safety: Forbidden statement type","code":"VALIDATION_FAILED","index":0}\n\n',
+      ]);
+    }
+    const sql = edited ?? "SELECT id, name FROM users LIMIT 10";
+    return sseResponse([
+      "event: status\ndata: executing\n\n",
+      `event: result\ndata: ${JSON.stringify({
+        index: 0,
+        sql,
+        columns: ["id", "name"],
+        rows: [[1, "Alice"], [2, "Bob"]],
+        row_count: 2,
+        truncated: false,
+        error: null,
+      })}\n\n`,
+      "event: status\ndata: answering\n\n",
+      "event: answer_delta\ndata: Found 2 \n\n",
+      "event: answer_delta\ndata:users in the database.\n\n",
+      `event: done\ndata: {"conversation_id":"conv-mock-123","turn_id":"${String(params.turnId)}"}\n\n`,
+    ]);
+  }),
+
+  http.get("/api/audit", () => HttpResponse.json(mockAuditEntries)),
+
+  http.post("/api/chat/:turnId/cancel", () => {
+    return new HttpResponse(null, { status: 204 });
   }),
 ];

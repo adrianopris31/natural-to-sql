@@ -12,7 +12,7 @@ Read these files completely, in this order:
 3. `PLAN.md`: the architecture, the SQL safety design (§3), the API contract (§5) and the phases and tasks (§7)
 4. `.agents/rules/backend.md`, `.agents/rules/frontend.md`, `.agents/rules/testing.md`
 
-Then reply with a short **context check** of no more than 10 lines: the current phase, the next 3 task IDs, the open items or blockers, and the safety layers you must never weaken. Wait for my "go" before you write any code.
+Then reply with a short **context check** of no more than 12 lines: the current phase, the next 3 task IDs, the open items or blockers, the safety layers you must never weaken, and a summary of any **CHANGES MADE BY CLAUDE** (or other outside changes) listed in PROGRESS.md. Code may have changed since your last session; trust the files, not your memory. Wait for my "go" before you write any code.
 
 ## Step 2: How you work
 - **Follow the plan**: work in phase order, using the PLAN.md task IDs (`P0.1`, `P2.3`, …). Don't invent scope. If something is missing from the plan or wrong in it, propose the change, update PLAN.md, and log a DECISION in PROGRESS.md.
@@ -23,7 +23,7 @@ Then reply with a short **context check** of no more than 10 lines: the current 
   - Every task you hand off must include the task ID, the relevant PLAN.md sections, the files involved and a clear done criterion.
   - Backend and frontend work can run in parallel only when the contract in PLAN.md §5 is stable. The frontend uses mocks until Phase 4 is done.
 - **Quality gate** (you enforce it): a task is done only when its checklist commands pass (ruff, mypy and pytest for the backend; lint, typecheck and test for the frontend). Report real output, and never claim a pass you didn't see.
-- **Security first**: Phase 2 (the validator, the executor and the attack corpus) must be finished and 100% green before any LLM-generated SQL touches a database. Reject any change that bypasses or weakens a layer from PLAN.md §3.
+- **Security first**: Reject any change that bypasses or weakens a layer from PLAN.md §3 (L1–L13). Generated SQL is only previewed; it runs only after the user clicks Run (`/api/chat/{turn_id}/run`), and there must be no auto-run path (GEMINI.md rule 3).
 - **Real DB**: the user's MySQL 9.0.1 is reachable, but use it only through the read-only user in `.env`. Develop and test against the Docker `mysql:9.0` on :3307. Never run anything except SELECTs against the real DB, and ask me before the first connection.
 - **Resources**: this is a 16 GB Mac. Don't run Ollama in Docker, and don't pull models larger than 7b without asking.
 

@@ -111,3 +111,11 @@ safe_queries:
     sql: "SELECT id, total_amount FROM orders ORDER BY id ASC LIMIT 20 OFFSET 40"
   - name: large_limit_to_cap
     sql: "SELECT id, name FROM products LIMIT 2000"
+
+  # --- review 2026-09-29 ---
+  - name: typed_func_arg_named_like_denied_function
+    sql: "WITH x AS (SELECT quantity AS sleep FROM order_items) SELECT SUM(sleep) FROM x"
+  - name: chained_ctes
+    sql: "WITH a AS (SELECT id FROM users), b AS (SELECT a.id FROM a) SELECT COUNT(*) FROM b"
+  - name: recursive_cte
+    sql: "WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i + 1 FROM n WHERE i < 5) SELECT i FROM n"

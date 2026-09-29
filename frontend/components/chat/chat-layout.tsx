@@ -25,6 +25,8 @@ export function ChatLayout() {
     sendMessage,
     stopGeneration,
     retry,
+    runTurn,
+    cancelTurn,
     loadConversation,
     reset,
   } = useChat();
@@ -164,6 +166,11 @@ export function ChatLayout() {
                       turn={turn}
                       isStreaming={isLastTurn && isStreaming}
                       onRetry={() => retry(turn.id)}
+                      onRun={async (edits) => {
+                        await runTurn(turn.id, edits);
+                        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+                      }}
+                      onCancel={() => cancelTurn(turn.id)}
                     />
                   </div>
                 );

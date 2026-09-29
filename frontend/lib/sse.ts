@@ -2,6 +2,9 @@ import {
   SSEEvent,
   TurnStatus,
   SSEResultData,
+  SSEPreviewData,
+  SSERefusedData,
+  TurnQuery,
   SSEDoneData,
   SSEClarificationData,
   SSEErrorData,
@@ -44,10 +47,37 @@ export function parseSSEData(eventType: string, rawData: string): SSEEvent | nul
             : [],
           row_count: typeof obj.row_count === "number" ? obj.row_count : 0,
           truncated: Boolean(obj.truncated),
+          ...(typeof obj.index === "number" ? { index: obj.index } : {}),
+          ...(typeof obj.sql === "string" ? { sql: obj.sql } : {}),
+          ...(typeof obj.error === "string" ? { error: obj.error } : {}),
         };
         return { type: "result", data: resultData };
       }
       return null;
+    }
+    case "preview": {
+      if (isJson && typeof parsedJson === "object" && parsedJson !== null) {
+        const obj = parsedJson as Record<string, unknown>;
+        const previewData: SSEPreviewData = {
+          conversation_id: String(obj.conversation_id ?? ""),
+          turn_id: String(obj.turn_id ?? ""),
+          queries: Array.isArray(obj.queries) ? (obj.queries as TurnQuery[]) : [],
+        };
+        return { type: "preview", data: previewData };
+      }
+      return null;
+    }
+    case "refused": {
+      if (isJson && typeof parsedJson === "object" && parsedJson !== null) {
+        const obj = parsedJson as Record<string, unknown>;
+        const refusedData: SSERefusedData = {
+          conversation_id: String(obj.conversation_id ?? ""),
+          turn_id: String(obj.turn_id ?? ""),
+          message: String(obj.message ?? ""),
+        };
+        return { type: "refused", data: refusedData };
+      }
+      return { type: "refused", data: { conversation_id: "", turn_id: "", message: rawData } };
     }
     case "answer_delta": {
       const deltaVal = isJson && typeof parsedJson === "string" ? parsedJson : rawData;
@@ -90,6 +120,7 @@ export function parseSSEData(eventType: string, rawData: string): SSEEvent | nul
         const errData: SSEErrorData = {
           message: String(obj.message ?? rawData),
           code: typeof obj.code === "string" ? obj.code : undefined,
+          ...(typeof obj.index === "number" ? { index: obj.index } : {}),
         };
         return { type: "error", data: errData };
       }

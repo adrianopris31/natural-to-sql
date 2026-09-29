@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-PROMPT_VERSION = "v1.0"
+PROMPT_VERSION = "v1.2"
 
 
 @dataclass
@@ -45,50 +45,69 @@ def build_sql_prompt(
     history: list[TurnHistory],
     schema_text: str,
     today_date: str,
+    max_queries: int = 3,
 ) -> list[dict[str, str]]:
     """Build system and user messages for SQL generation."""
     system_parts = [
         "You are an expert MySQL database analyst generating SQL queries for MySQL 9.0.",
         "",
         "### STRICT RULES:",
-        "1. Generate strictly a single, read-only SELECT statement.",
+        "1. Every query must be a single, read-only SELECT statement (no semicolon-chained SQL).",
         "2. Use ONLY the tables and column names provided in the DATABASE SCHEMA below.",
         "3. Always qualify ambiguous column names with table names or explicit aliases.",
         "4. Prefer explicit JOIN syntax (INNER JOIN, LEFT JOIN) with explicit ON clauses.",
         "5. For 'top N' or 'most/least' questions, use ORDER BY with an appropriate LIMIT.",
         f"6. Today's date is {today_date}. Use this date for any relative date calculations.",
         "7. If ambiguous, set `needs_clarification: true` and specify `clarification_question`.",
+        "8. Never use SELECT *; list the columns you need.",
+        "9. Return `queries` as a list. Use ONE query whenever one query can answer the question.",
+        f"   Use up to {max_queries} INDEPENDENT queries only when the question asks for",
+        "   separate things that do not fit one result table. Each query must stand alone",
+        "   (no query may depend on another's results). Give each a short `purpose`.",
+        "10. This assistant is READ-ONLY. If the user asks to delete, update, insert, create,",
+        "   drop or otherwise change data, set `write_intent: true`, return no queries, and",
+        "   do NOT ask for confirmation (the change is impossible, not just risky).",
         "",
         "### DATABASE SCHEMA:",
         schema_text,
         "",
         "### FEW-SHOT EXAMPLES:",
-        "- Example 1 (Top N with Join):",
+        "- Example 1 (Top N with Join, one query):",
         "  User: 'Top 5 users by total revenue'",
         (
-            '  JSON Response: {"sql": "SELECT u.id, u.name, SUM(o.total_amount) AS total_spent '
-            "FROM users u JOIN orders o ON u.id = o.user_id WHERE o.status IN ('completed', "
-            "'shipped') GROUP BY u.id, u.name ORDER BY total_spent DESC LIMIT 5;\", "
+            '  JSON Response: {"queries": [{"sql": "SELECT u.id, u.name, SUM(o.total_amount) '
+            "AS total_spent FROM users u JOIN orders o ON u.id = o.user_id WHERE o.status IN "
+            "('completed', 'shipped') GROUP BY u.id, u.name ORDER BY total_spent DESC LIMIT 5\", "
+            '"purpose": "Top 5 users by revenue"}], '
             '"reasoning": "Join users with completed orders, sum revenue, order desc, limit 5.", '
             '"needs_clarification": false, "clarification_question": null}'
         ),
         "",
-        "- Example 2 (Date Aggregation):",
-        "  User: 'Monthly revenue in 2025'",
+        "- Example 2 (Two separate questions, two independent queries):",
+        "  User: 'How many orders were placed in 2025, and which product is the most expensive?'",
         (
-            '  JSON Response: {"sql": "SELECT DATE_FORMAT(created_at, \'%Y-%m\') AS month, '
-            "SUM(total_amount) AS revenue FROM orders WHERE created_at >= '2025-01-01' AND "
-            "created_at < '2026-01-01' AND status IN ('completed', 'shipped') "
-            'GROUP BY month ORDER BY month;", "reasoning": "Filter 2025 orders, group by month.", '
+            '  JSON Response: {"queries": [{"sql": "SELECT COUNT(*) AS orders_2025 FROM orders '
+            "WHERE created_at >= '2025-01-01' AND created_at < '2026-01-01'\", "
+            '"purpose": "Orders placed in 2025"}, {"sql": "SELECT id, name, price FROM products '
+            'ORDER BY price DESC LIMIT 1", "purpose": "Most expensive product"}], '
+            '"reasoning": "Two unrelated facts, one query each.", '
             '"needs_clarification": false, "clarification_question": null}'
         ),
         "",
         "- Example 3 (Clarification Request):",
         "  User: 'Show me the report'",
         (
-            '  JSON Response: {"sql": null, "reasoning": "The request is too vague.", '
+            '  JSON Response: {"queries": [], "reasoning": "The request is too vague.", '
             '"needs_clarification": true, "clarification_question": '
             '"Could you clarify which report you would like to view?"}'
+        ),
+        "",
+        "- Example 4 (Request to change data, refused, no confirmation question):",
+        "  User: 'Delete the user John Smith'",
+        (
+            '  JSON Response: {"queries": [], "reasoning": "Deleting data is not possible; '
+            'the assistant is read-only.", "write_intent": true, '
+            '"needs_clarification": false, "clarification_question": null}'
         ),
     ]
 
@@ -124,7 +143,8 @@ def build_repair_prompt(
         f"Original User Question: {question}\n\n"
         f"Previously Generated SQL:\n```sql\n{bad_sql}\n```\n\n"
         f"Error Encountered:\n{error_message}\n\n"
-        "Please fix the error and return corrected JSON adhering to the specified schema."
+        "Fix the error and return corrected JSON adhering to the specified schema, with "
+        "exactly ONE query in `queries` (never SELECT *)."
     )
 
     return [
@@ -133,15 +153,21 @@ def build_repair_prompt(
     ]
 
 
-def build_answer_prompt(
-    question: str,
-    sql: str,
-    columns: list[str],
-    rows: list[list[Any]],
-    row_count: int,
-    truncated: bool,
-) -> list[dict[str, str]]:
-    """Build answer prompt grounded strictly in result rows."""
+@dataclass
+class AnswerResult:
+    """One executed query's outcome, as input to the answer prompt."""
+
+    sql: str
+    columns: list[str]
+    rows: list[list[Any]]
+    row_count: int
+    truncated: bool
+    purpose: str = ""
+    error: str | None = None
+
+
+def build_answer_prompt(question: str, results: list[AnswerResult]) -> list[dict[str, str]]:
+    """Build answer prompt grounded strictly in the result rows of one or more queries."""
     system_content = (
         "You are a concise, helpful data analyst explaining database results to a user.\n\n"
         "### RULES:\n"
@@ -150,22 +176,32 @@ def build_answer_prompt(
         "3. Do not invent or assume data that is not in the results.\n"
         "4. If 0 rows were returned, state clearly that no matching records were found.\n"
         "5. If truncated is true, explicitly state that results show the first rows.\n"
-        "6. Keep your answer brief, clear, and professional."
+        "6. If a query failed, say that part could not be answered.\n"
+        "7. When there are several queries, answer every part of the question in one reply.\n"
+        "8. Keep your answer brief, clear, and professional."
     )
 
-    table_md = format_markdown_table(columns, rows)
-    truncation_note = (
-        "Note: Results were truncated to the maximum limit."
-        if truncated
-        else "All matching rows are shown."
-    )
+    sections: list[str] = []
+    for i, res in enumerate(results, start=1):
+        header = f"### Query {i}" + (f" — {res.purpose}" if res.purpose else "")
+        if res.error:
+            sections.append(f"{header}\n```sql\n{res.sql}\n```\nFAILED: {res.error}")
+            continue
+        truncation_note = (
+            "Note: Results were truncated to the maximum limit."
+            if res.truncated
+            else "All matching rows are shown."
+        )
+        sections.append(
+            f"{header}\n```sql\n{res.sql}\n```\n"
+            f"Results ({res.row_count} rows, {truncation_note}):\n"
+            f"{format_markdown_table(res.columns, res.rows)}"
+        )
 
     user_content = (
         f"User Question: {question}\n\n"
-        f"Executed SQL:\n```sql\n{sql}\n```\n\n"
-        f"Query Results ({row_count} rows, {truncation_note}):\n"
-        f"{table_md}\n\n"
-        "Please provide a clear, concise answer summarizing these findings."
+        + "\n\n".join(sections)
+        + "\n\nPlease provide a clear, concise answer summarizing these findings."
     )
 
     return [

@@ -147,4 +147,4 @@ def select_relevant_tables(
     # Filter original schema tables preserving order
     pruned_tables = [t for t in schema.tables if t.name.lower() in expanded_names]
 
-    return SchemaModel(tables=pruned_tables)
+    return SchemaModel(tables=pruned_tables, database=schema.database)

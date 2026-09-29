@@ -21,6 +21,20 @@ class ConversationSummary(BaseModel):
     updated_at: str
 
 
+class QueryResponse(BaseModel):
+    """One planned/executed query within a turn (preview + result)."""
+
+    index: int
+    purpose: str = ""
+    sql: str
+    explain: dict[str, Any] | None = None
+    columns: list[str] | None = None
+    rows: list[list[Any]] | None = None
+    row_count: int | None = None
+    truncated: bool | None = None
+    error: str | None = None
+
+
 class TurnResponse(BaseModel):
     """Full detail of a conversation turn matching frontend Turn model."""
 
@@ -31,6 +45,7 @@ class TurnResponse(BaseModel):
     rows: list[list[Any]] | None = None
     row_count: int | None = None
     truncated: bool | None = None
+    queries: list[QueryResponse] | None = None
     answer: str | None = None
     status: str
     error: str | None = None
@@ -73,6 +88,11 @@ async def get_conversation_by_id(conversation_id: str) -> ConversationDetail:
     for t in conv.turns:
         cols: list[str] | None = json.loads(t.columns_json) if t.columns_json else None
         rows: list[list[Any]] | None = json.loads(t.rows_json) if t.rows_json else None
+        queries = (
+            [QueryResponse.model_validate(q) for q in json.loads(t.queries_json)]
+            if t.queries_json
+            else None
+        )
 
         turn_models.append(
             TurnResponse(
@@ -83,6 +103,7 @@ async def get_conversation_by_id(conversation_id: str) -> ConversationDetail:
                 rows=rows,
                 row_count=t.row_count,
                 truncated=t.truncated,
+                queries=queries,
                 answer=t.answer,
                 status=t.status,
                 error=t.error,

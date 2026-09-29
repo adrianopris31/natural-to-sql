@@ -1,5 +1,7 @@
 import {
+  AuditEntry,
   ChatRequest,
+  RunRequest,
   CompactSchema,
   ConversationDetail,
   ConversationSummary,
@@ -53,19 +55,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function chatStream(
-  message: string,
-  conversationId?: string,
+async function streamSSE(
+  path: string,
+  body: unknown,
   onEvent?: (ev: SSEEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const url = `${API_BASE}/chat`;
-  const body: ChatRequest = {
-    message,
-    ...(conversationId ? { conversation_id: conversationId } : {}),
-  };
-
-  const response = await fetch(url, {
+  const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -98,6 +94,35 @@ export async function chatStream(
   }
 }
 
+/** Phase 1: ask a question. Streams status events and ends with `preview` (nothing runs). */
+export async function chatStream(
+  message: string,
+  conversationId?: string,
+  onEvent?: (ev: SSEEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const body: ChatRequest = {
+    message,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
+  };
+  return streamSSE("/chat", body, onEvent, signal);
+}
+
+/** Phase 2: approve a previewed turn (optionally with edited SQL) and stream results. */
+export async function runTurnStream(
+  turnId: string,
+  queries: (string | null)[] | undefined,
+  onEvent?: (ev: SSEEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const body: RunRequest = queries ? { queries } : {};
+  return streamSSE(`/chat/${encodeURIComponent(turnId)}/run`, body, onEvent, signal);
+}
+
+export async function cancelTurn(turnId: string): Promise<void> {
+  return request<void>(`/chat/${encodeURIComponent(turnId)}/cancel`, { method: "POST" });
+}
+
 export async function fetchConversations(): Promise<ConversationSummary[]> {
   return request<ConversationSummary[]>("/conversations");
 }
@@ -120,6 +145,13 @@ export async function refreshSchema(): Promise<SchemaRefreshResponse> {
   return request<SchemaRefreshResponse>("/schema/refresh", {
     method: "POST",
   });
+}
+
+/** Newest-first SQL audit log (every generated, edited, blocked and executed query). */
+export async function fetchAuditLog(limit = 200, turnId?: string): Promise<AuditEntry[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (turnId) params.set("turn_id", turnId);
+  return request<AuditEntry[]>(`/audit?${params.toString()}`);
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {

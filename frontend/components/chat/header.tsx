@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchHealth } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Menu, Moon, Sun, X, Activity } from "lucide-react";
+import { Menu, Moon, Sun, X, Activity, ScrollText } from "lucide-react";
+import { SqlLogPanel } from "./sql-log-panel";
 
 interface HeaderProps {
   sidebarOpen: boolean;
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
   const [isDark, setIsDark] = useState(false);
+  const [sqlLogOpen, setSqlLogOpen] = useState(false);
 
   useEffect(() => {
     // Check initial preference from document or system
@@ -97,6 +99,18 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
           <Activity className="size-3 text-muted-foreground sm:hidden" />
         </div>
 
+        {/* SQL audit log */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setSqlLogOpen(true)}
+          aria-label="Open SQL log"
+          title="Every SQL query generated, edited, blocked or executed"
+        >
+          <ScrollText className="size-4" />
+          <span className="hidden sm:inline">SQL log</span>
+        </Button>
+
         {/* Theme Toggle Button */}
         <Button
           variant="ghost"
@@ -108,6 +122,7 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
           {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </Button>
       </div>
+      <SqlLogPanel open={sqlLogOpen} onClose={() => setSqlLogOpen(false)} />
     </header>
   );
 }

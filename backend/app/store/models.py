@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -58,6 +58,8 @@ class Turn(Base):
     sql: Mapped[str | None] = mapped_column(Text, nullable=True)
     columns_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     rows_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-query state: [{index, purpose, sql, explain, columns, rows, row_count, truncated, error}]
+    queries_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -86,6 +88,11 @@ class AuditLog(Base):
     safe_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
     accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # validated | rejected | explain_failed | blocked | edited | executed | execution_failed
+    # | refused
+    stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elapsed_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.datetime.now(datetime.UTC),

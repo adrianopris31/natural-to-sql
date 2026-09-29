@@ -241,3 +241,26 @@ describe("SSE Parser (lib/sse.ts)", () => {
     });
   });
 });
+
+describe("preview and indexed result events", () => {
+  it("parses preview events with queries and explain", () => {
+    const events = parseSSEText(
+      'event: preview\ndata: {"conversation_id":"c","turn_id":"t","queries":[{"index":0,"purpose":"p","sql":"SELECT 1","explain":{"cost":1,"estimated_rows":1,"tables":[],"warnings":[],"blocked":false,"block_reason":null},"columns":null,"rows":null,"row_count":null,"truncated":null,"error":null}]}\n\n'
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("preview");
+    if (events[0].type === "preview") {
+      expect(events[0].data.turn_id).toBe("t");
+      expect(events[0].data.queries[0].sql).toBe("SELECT 1");
+    }
+  });
+
+  it("keeps index/sql/error on result and index on error events", () => {
+    const events = parseSSEText(
+      'event: result\ndata: {"index":1,"sql":"SELECT 2","columns":[],"rows":[],"row_count":0,"truncated":false,"error":"boom"}\n\n' +
+        'event: error\ndata: {"message":"m","code":"BLOCKED_BY_EXPLAIN","index":2}\n\n'
+    );
+    expect(events[0]).toMatchObject({ type: "result", data: { index: 1, sql: "SELECT 2", error: "boom" } });
+    expect(events[1]).toMatchObject({ type: "error", data: { code: "BLOCKED_BY_EXPLAIN", index: 2 } });
+  });
+});

@@ -2,6 +2,7 @@
 
 from app.llm.prompts import (
     PROMPT_VERSION,
+    AnswerResult,
     TurnHistory,
     build_answer_prompt,
     build_repair_prompt,
@@ -11,7 +12,7 @@ from app.llm.prompts import (
 
 
 def test_prompt_version() -> None:
-    assert PROMPT_VERSION == "v1.0"
+    assert PROMPT_VERSION == "v1.2"
 
 
 def test_turn_history_formatting() -> None:
@@ -92,13 +93,31 @@ def test_build_answer_prompt() -> None:
     rows = [["Alice", 5000], ["Bob", 3000]]
     messages = build_answer_prompt(
         question="Who are the top users?",
-        sql="SELECT name, revenue FROM top_users;",
-        columns=cols,
-        rows=rows,
-        row_count=2,
-        truncated=False,
+        results=[
+            AnswerResult(
+                sql="SELECT name, revenue FROM top_users;",
+                columns=cols,
+                rows=rows,
+                row_count=2,
+                truncated=False,
+            )
+        ],
     )
     assert len(messages) == 2
     assert "Alice" in messages[1]["content"]
     assert "Bob" in messages[1]["content"]
     assert "All matching rows are shown" in messages[1]["content"]
+
+
+def test_sql_prompt_describes_multi_query_format() -> None:
+    messages = build_sql_prompt(
+        question="q",
+        history=[],
+        schema_text="users(id int)",
+        today_date="2026-01-01",
+        max_queries=3,
+    )
+    system = messages[0]["content"]
+    assert '"queries": [' in system
+    assert "up to 3 INDEPENDENT queries" in system
+    assert "Never use SELECT *" in system
