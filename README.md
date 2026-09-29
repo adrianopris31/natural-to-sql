@@ -22,6 +22,7 @@ Built for **MySQL 9.0 / 8.0+**, powered by native **Ollama (`qwen2.5-coder:7b`)*
 - [14-Layer Defense-in-Depth Security Matrix](#-14-layer-defense-in-depth-security-matrix)
 - [Prerequisites](#-prerequisites)
 - [Quickstart (Local Native Mac / Linux)](#-quickstart-local-native-mac--linux)
+- [Quickstart (Native Windows Setup)](#-quickstart-native-windows-setup-no-wsl-no-docker-required)
 - [Docker Deployment Guide](#-docker-deployment-guide)
 - [Running on Other Machines & Remote Environments](#-running-on-other-machines--remote-environments)
 - [Connecting to Your Own Database](#-connecting-to-your-own-database)
@@ -113,11 +114,11 @@ No single security measure is relied upon. Even if the LLM produces malicious or
 
 | Component | Minimum Requirement | Notes |
 |---|---|---|
-| **OS** | macOS (Apple Silicon M1-M4 recommended), Linux (x86_64/ARM64), or Windows WSL2 | Native Apple Silicon Metal GPU acceleration gives instant ~5s latency. |
-| **Python** | 3.12+ | Managed via [**uv**](https://github.com/astral-sh/uv) (fast Python package manager). |
+| **OS** | macOS (Apple Silicon M1-M4), Linux (x86_64/ARM64), or Windows 10/11 (Native or WSL2) | Runs 100% natively on macOS, Linux, and Windows without virtualization. |
+| **Python** | 3.12+ | Managed via [**uv**](https://github.com/astral-sh/uv) (ultra-fast Python package manager). |
 | **Node.js** | 20.0+ | Managed via [**pnpm**](https://pnpm.io/) (`corepack enable pnpm`). |
-| **Container Engine**| Docker Desktop, OrbStack, or Colima | Used for dev MySQL or full-stack containerization. |
-| **Ollama** | Latest release | Native host install recommended: [ollama.com](https://ollama.com). |
+| **Container Engine**| **Optional** (Docker Desktop / Colima) | **Not needed** if you connect to your own MySQL database. |
+| **Ollama** | Latest release | Native host install: [ollama.com](https://ollama.com). Runs with GPU acceleration on macOS, Windows, and Linux. |
 
 ---
 
@@ -142,6 +143,54 @@ A single command spins up the sample e-commerce MySQL database (port 3307), runs
 ```bash
 make dev
 ```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser!
+
+---
+
+## 🪟 Quickstart: Native Windows Setup (No WSL, No Docker Required)
+
+If you are developing on Windows 10 or 11, the app runs **100% natively in PowerShell** without needing WSL or Docker. All components (`uv`, `pnpm`, `asyncmy`, `sqlglot`, and Ollama) have native Windows support.
+
+### 1. Install Prerequisites (PowerShell)
+1. **Ollama for Windows**: Download installer from [ollama.com/download/windows](https://ollama.com/download/windows).
+2. **Node.js 20+ (LTS)**: Download installer from [nodejs.org](https://nodejs.org).
+3. **`uv` (Python manager)**: In PowerShell, run:
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+4. **`pnpm`**: In PowerShell, run:
+   ```powershell
+   corepack enable pnpm
+   ```
+
+### 2. Download Model & Setup Project
+In PowerShell:
+```powershell
+# Pull the AI model
+ollama pull qwen2.5-coder:7b
+
+# Clone repo & create .env
+git clone https://github.com/adrianopris31/natural-to-sql.git
+cd natural-to-sql
+copy .env.example .env
+```
+Edit `.env` to point `TARGET_DB_URL` to your local Windows MySQL database (e.g. `mysql+asyncmy://nl2sql_ro:password@127.0.0.1:3306/your_database`).
+
+### 3. Start Application
+Open two PowerShell terminals:
+
+- **Terminal 1 (Backend):**
+  ```powershell
+  cd natural-to-sql\backend
+  uv sync
+  uv run uvicorn app.main:app --reload --port 8000
+  ```
+- **Terminal 2 (Frontend):**
+  ```powershell
+  cd natural-to-sql\frontend
+  pnpm install
+  pnpm dev
+  ```
 Open **[http://localhost:3000](http://localhost:3000)** in your browser!
 
 ---
@@ -239,10 +288,20 @@ On Linux servers with NVIDIA GPUs, you can run Ollama directly with CUDA support
    docker compose up -d --build
    ```
 
-### Scenario B: Running on Windows via WSL2
+### Scenario B: Running on Windows (Native vs WSL2)
 
+#### Option 1: 100% Native Windows (Recommended - No WSL, No Docker)
+The entire stack runs directly on Windows without virtualization:
+1. Install native tools in PowerShell: `ollama.exe`, `uv`, and `pnpm`.
+2. Pull model: `ollama pull qwen2.5-coder:7b`.
+3. Start backend: `cd backend && uv run uvicorn app.main:app --port 8000`.
+4. Start frontend: `cd frontend && pnpm dev`.
+*(See the [Native Windows Quickstart](#-quickstart-native-windows-setup-no-wsl-no-docker-required) above for full details).*
+
+#### Option 2: Windows via WSL2 (For Linux Bash Developers)
+If you prefer running inside an Ubuntu terminal on Windows:
 1. Open Ubuntu in **WSL2**.
-2. Install Ollama natively on Windows or inside WSL2.
+2. Install Ollama natively on Windows (or inside WSL2).
 3. In `.env`, set `OLLAMA_URL=http://host.docker.internal:11434` (if Ollama is installed on Windows host) or `http://127.0.0.1:11434` (if running inside WSL2).
 4. Run `make dev` or `make docker-up`.
 
