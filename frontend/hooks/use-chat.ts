@@ -101,6 +101,9 @@ export function useChat(initialConversationId?: string): UseChatReturn {
         await start((ev: SSEEvent) => {
           switch (ev.type) {
             case "status":
+              if (mode === "run" && (ev.data === "validating" || ev.data === "explaining")) {
+                break;
+              }
               setActiveStatus(ev.data);
               updateTurn((t) => ({ ...t, status: ev.data }));
               break;
@@ -237,10 +240,10 @@ export function useChat(initialConversationId?: string): UseChatReturn {
       if (isStreaming) return;
       setTurns((prev) =>
         prev.map((t) =>
-          t.id === turnId ? { ...t, status: "validating", error: null, answer: null } : t
+          t.id === turnId ? { ...t, status: "executing", error: null, answer: null } : t
         )
       );
-      setActiveStatus("validating");
+      setActiveStatus("executing");
       await streamIntoTurn(
         turnId,
         (onEvent, signal) => runTurnStream(turnId, editedSql, onEvent, signal),

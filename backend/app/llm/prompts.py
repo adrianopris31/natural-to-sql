@@ -130,14 +130,22 @@ def build_repair_prompt(
     bad_sql: str,
     error_message: str,
     schema_text: str,
+    history: list[TurnHistory] | None = None,
 ) -> list[dict[str, str]]:
     """Build repair prompt providing the bad SQL and exact validation or DB error."""
-    system_content = (
-        "You are an expert MySQL database analyst repairing a failed SQL query for MySQL 9.0.\n"
-        "Analyze the error, verify against DATABASE SCHEMA, and generate corrected SQL.\n\n"
-        "### DATABASE SCHEMA:\n"
-        f"{schema_text}"
-    )
+    system_parts = [
+        "You are an expert MySQL database analyst repairing a failed SQL query for MySQL 9.0.",
+        "Analyze the error, verify against DATABASE SCHEMA, and generate corrected SQL.",
+        "",
+        "### DATABASE SCHEMA:",
+        f"{schema_text}",
+    ]
+
+    if history:
+        system_parts.append("")
+        system_parts.append("### CONVERSATION HISTORY:")
+        for turn in history:
+            system_parts.append(turn.to_history_str())
 
     user_content = (
         f"Original User Question: {question}\n\n"
@@ -148,7 +156,7 @@ def build_repair_prompt(
     )
 
     return [
-        {"role": "system", "content": system_content},
+        {"role": "system", "content": "\n".join(system_parts)},
         {"role": "user", "content": user_content},
     ]
 

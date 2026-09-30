@@ -152,6 +152,38 @@ async def test_repair_sql_happy_path() -> None:
     assert draft.sql == "SELECT id, name FROM users;"
 
 
+@pytest.mark.asyncio
+async def test_repair_sql_with_history() -> None:
+    from app.llm.prompts import TurnHistory
+
+    fake_client = FakeLLMClient(
+        json_responses=[
+            {
+                "sql": "SELECT id, name FROM users WHERE status = 'active';",
+                "reasoning": "Fixed query with history context",
+                "needs_clarification": False,
+            }
+        ]
+    )
+    schema = _get_mock_schema()
+    settings = Settings()
+    history = [TurnHistory(question="Show active users", sql="SELECT id FROM users;")]
+
+    draft = await repair(
+        question="Show their names too",
+        bad_sql="SELECT name FROM non_existent;",
+        error_msg="Table not found",
+        schema=schema,
+        client=fake_client,
+        settings=settings,
+        history=history,
+    )
+    assert draft.sql == "SELECT id, name FROM users WHERE status = 'active';"
+    # Verify the sent prompt actually contained the history
+    sent_messages = fake_client.recorded_chat_calls[0]["messages"]
+    assert any("### CONVERSATION HISTORY:" in m["content"] for m in sent_messages)
+
+
 def test_sql_draft_accepts_legacy_single_sql_shape() -> None:
     draft = SqlDraft.model_validate({"sql": "SELECT 1", "needs_clarification": False})
     assert [q.sql for q in draft.queries] == ["SELECT 1"]

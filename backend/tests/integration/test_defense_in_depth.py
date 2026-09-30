@@ -85,3 +85,24 @@ async def test_defense_in_depth_blocks_create_table() -> None:
             assert "denied" in err_msg or "read only" in err_msg
         finally:
             await conn.execute(text("ROLLBACK;"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sql_statement",
+    [
+        "INSERT INTO categories (name, slug) VALUES ('Hacked', 'hacked');",
+        "UPDATE users SET status = 'suspended' WHERE id = 1;",
+        "DELETE FROM categories WHERE id = 1;",
+        "DROP TABLE IF EXISTS users;",
+        "CREATE TABLE evil_table (id INT PRIMARY KEY);",
+    ],
+)
+async def test_l1_alone_blocks_writes_without_read_only_txn(sql_statement: str) -> None:
+    """L1 (MySQL user privileges) alone blocks write statements without START TRANSACTION."""
+    engine = get_engine()
+    async with engine.connect() as conn:
+        with pytest.raises(DBAPIError) as exc_info:
+            await conn.execute(text(sql_statement))
+        err_msg = str(exc_info.value).lower()
+        assert "command denied" in err_msg or "denied" in err_msg or "access denied" in err_msg

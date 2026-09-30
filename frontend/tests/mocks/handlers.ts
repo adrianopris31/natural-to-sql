@@ -299,7 +299,6 @@ export const handlers = [
     const edited = body.queries?.[0];
     if (edited && edited.toUpperCase().includes("DROP")) {
       return sseResponse([
-        "event: status\ndata: validating\n\n",
         'event: error\ndata: {"message":"Query 1: SQL rejected for safety: Forbidden statement type","code":"VALIDATION_FAILED","index":0}\n\n',
       ]);
     }

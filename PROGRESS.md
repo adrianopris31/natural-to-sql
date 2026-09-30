@@ -2,19 +2,16 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-v1 + Phase 8 done: SQL preview/approval, EXPLAIN gate, multi-query (≤3), **read-only refusal of write requests, risk red flags, full SQL audit log (DB + JSONL + UI panel)**. Validator holes H1–H5 fixed. Real DB `easybiz_data_1` (MySQL 9.0.1) + dev DB :3307. Backend 286 tests, frontend 57; ruff/mypy/eslint/tsc clean. Pending: a live test with the real model (Ollama was down; verified on the real DB with scripted model output).
+Phase 8 done: SQL preview/approval, EXPLAIN gate, multi-query (≤3), read-only refusal of write requests, risk red flags, full SQL audit log. P2.4 defense-in-depth isolation test added (L1-only verified). History passed to repair loop. Playwright E2E suite added (P8.10). Fixed post-approval state stepper regression to "validating" (now advances to "executing"). Backend: 293 tests passing; Frontend: 57 tests passing; ruff/mypy/eslint/tsc clean.
 
 ## NEXT
-1. **P8.8** Live check with Ollama (`ollama serve`, `make dev`) on `easybiz_data_1`: preview → Run / Edit / Cancel; "delete user" → Not performed; a risky query → red banner + Run anyway; SQL log panel.
-2. **P8.9/P8.16** `make eval` with prompt v1.2; accept if ≥ 85.5% (v1.0 = 87.5%). Check the keyword refusal has no false positives on real questions.
-3. **P8.10** Playwright e2e (`frontend/tests/e2e/`, missing): preview → Run, Edit, Cancel, blocked, refused, risky → Run anyway, SQL log.
-4. **P2.4** Defense-in-depth test *without* opening the READ ONLY txn (prove the RO user alone blocks writes).
-5. Push `main` to user's remote GitHub repository.
-6. **P6.4** real-DB evals; pass history to repair(); **P8.11** tune EXPLAIN thresholds (real-DB costs so far: 5–230).
+1. **P8.8** Live check with Ollama (`ollama serve`) on `easybiz_data_1`: preview → Run / Edit / Cancel; "delete user" → Not performed; a risky query → red banner + Run anyway; SQL log panel.
+2. **P8.9/P8.16** `make eval` with prompt v1.2; accept if ≥ 85.5% (v1.0 = 87.5%).
+3. **P8.11** Tune EXPLAIN thresholds on real DB if needed.
 
 ## OPEN (need user input)
 - Verify `SHOW GRANTS FOR 'nl2sql_ro'@'%'` on the real DB = SELECT on `easybiz_data_1`.* only.
-- `.env`: the active TARGET_DB_URL = real DB `easybiz_data_1` :3306 (dev :3307 is commented out). Restart the backend after switching (settings are cached; `--reload` ignores `.env`).
+- `.env`: active TARGET_DB_URL choice between local real DB :3306 or dev container :3307.
 - Any more tables to exclude via DENY_TABLES?
 
 ## BLOCKERS
@@ -49,6 +46,8 @@ none
 - `README.md` (architecture + 13-layer model; it wrongly claimed "formula-injection sanitization", which isn't implemented, so that was removed) and `STARTUP_GUIDE.md` (§5 Using the app: preview → approve → run).
 
 ## DECISIONS
+- 2026-09-30: On confirmation, UI state transitions immediately to `executing` and suppresses intermediate re-validation SSE events to prevent backward stepper regression.
+- 2026-09-30: Pass conversation history into `repair()` and `build_repair_prompt` so multi-turn context is preserved during SQL repair attempts.
 - 2026-09-29: Write requests are refused up front (keyword check + model `write_intent`), never answered with a confirmation question; risky previews are red-flagged and need an explicit "Run anyway"; every SQL event is audit-logged (DB + JSONL + UI). User request.
 - 2026-09-29: Every generated query needs explicit user approval (always preview); EXPLAIN is shown and gates execution (blocked = can't run unless edited); up to 3 independent queries per question, answered together. User choice.
 - 2026-09-29: Auto-encode `@` in DB URL passwords and allow string-or-list in Settings to avoid pydantic validation halts.
@@ -67,6 +66,7 @@ none
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
+- 2026-09-30: Completed P2.4 (L1-only isolation tests), history-in-repair loop, Playwright E2E suite (P8.10), and fixed post-approval state regression to "validating" (now "executing"). 293 backend + 57 frontend tests passing.
 - 2026-09-29: Claude: read-only refusal (fixes "delete user" → "Completed"), risk red flags + Run-anyway confirmation, full SQL audit log + UI panel; docs updated (see E).
 - 2026-09-29: Claude: fixed validator H1–H5; built preview/approval + EXPLAIN gate + multi-query (backend + frontend + tests); updated PLAN §2/§3/§5/§6 and GEMINI rules.
 - 2026-09-29: Claude review + fix: diagnosed real-DB hang (introspection 0.1s, LLM gen 10–30s+, Next proxy dropped idle SSE at 30s → turns stuck `generating_sql`). Added heartbeat, proxyTimeout, stream-cutoff handling + tests (see CHANGES MADE BY CLAUDE). The review found validator holes H1–H5.

@@ -86,6 +86,28 @@ def test_build_repair_prompt() -> None:
     assert len(messages) == 2
     assert "unknown_table" in messages[1]["content"]
     assert "not in the allowed schema" in messages[1]["content"]
+    assert "CONVERSATION HISTORY" not in messages[0]["content"]
+
+
+def test_build_repair_prompt_with_history() -> None:
+    history = [
+        TurnHistory(
+            question="Show active users",
+            sql="SELECT * FROM users WHERE status = 'active';",
+            result_summary="50 rows",
+        )
+    ]
+    messages = build_repair_prompt(
+        question="Which of them spent over $100?",
+        bad_sql="SELECT user_id FROM orders WHERE total > 100;",
+        error_message="Unknown column 'total' in 'orders'",
+        schema_text="users(id int), orders(id int, user_id int, total_amount decimal)",
+        history=history,
+    )
+    assert len(messages) == 2
+    assert "### CONVERSATION HISTORY:" in messages[0]["content"]
+    assert "Show active users" in messages[0]["content"]
+    assert "Unknown column 'total'" in messages[1]["content"]
 
 
 def test_build_answer_prompt() -> None:

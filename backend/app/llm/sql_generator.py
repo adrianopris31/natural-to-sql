@@ -117,6 +117,7 @@ async def repair(
     schema: SchemaModel,
     client: LLMClient,
     settings: Settings,
+    history: list[TurnHistory] | None = None,
 ) -> SqlDraft:
     """Request corrected SQL from the LLM based on specific error feedback."""
     _ = settings
@@ -126,6 +127,7 @@ async def repair(
         bad_sql=bad_sql,
         error_message=error_msg,
         schema_text=schema_text,
+        history=history,
     )
     json_schema = SqlDraft.model_json_schema()
 

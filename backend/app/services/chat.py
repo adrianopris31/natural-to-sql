@@ -149,6 +149,7 @@ async def _prepare_query(
     turn_id: str,
     max_repairs: int,
     user_edited: bool = False,
+    history: list[TurnHistory] | None = None,
 ) -> AsyncIterator[str | PreparedQuery]:
     """Validate + EXPLAIN one query, repairing via the LLM up to `max_repairs` times.
 
@@ -227,6 +228,7 @@ async def _prepare_query(
                 schema=schema,
                 client=client,
                 settings=settings,
+                history=history,
             )
         except LLMError as repair_exc:
             raise PrepareFailedError(
@@ -379,6 +381,7 @@ async def process_chat(
                     settings=settings,
                     turn_id=turn_id,
                     max_repairs=settings.MAX_REPAIR_ATTEMPTS,
+                    history=history,
                 ):
                     if isinstance(item, PreparedQuery):
                         prepared.append(item)
@@ -489,8 +492,6 @@ async def run_approved_turn(
                 ):
                     if isinstance(item, PreparedQuery):
                         approved.append(item)
-                    else:
-                        yield item
             except PrepareFailedError as fail:
                 yield format_sse(
                     "error",
