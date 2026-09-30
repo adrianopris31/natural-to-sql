@@ -158,34 +158,102 @@ If you are developing on Windows 10 or 11, the app runs **100% natively in Power
    ```powershell
    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
-4. **`pnpm`**: In PowerShell, run:
+4. **`pnpm`**: In PowerShell, install globally via npm:
    ```powershell
-   corepack enable pnpm
+   npm install -g pnpm
    ```
+   *(Note: `npm install -g pnpm` is recommended over `corepack enable pnpm` to avoid Node 24 corepack module resolution issues).*
+5. **MySQL Server**: You can use native MySQL 8.0/9.0, or [WampServer 64-bit](https://www.wampserver.com/), or XAMPP.
+6. **Database GUI (Recommended)**: [HeidiSQL](https://www.heidisql.com/) or MySQL Workbench.
 
-### 2. Download Model & Setup Project
+---
+
+### 2. Configure MySQL & HeidiSQL on Windows
+
+If using **WampServer** or local MySQL:
+
+1. **Start the MySQL Service**:
+   - Launch **WampServer** (run as Administrator if prompted). Ensure the notification tray icon turns **Green**.
+   - If MySQL is stopped, click the Wamp icon $\rightarrow$ **MySQL** $\rightarrow$ **Service administration** $\rightarrow$ **Start / Resume Service** (or open `services.msc` and start `wampmysqld64`).
+2. **Connect via HeidiSQL**:
+   - **Network type**: `MariaDB or MySQL (TCP/IP)`
+   - **Hostname / IP**: `127.0.0.1` (or `localhost`)
+   - **User**: `root`
+   - **Password**: *(Leave blank/empty by default on WampServer, or enter your MySQL root password)*
+   - **Port**: `3306` (Note: Wamp MariaDB defaults to 3307; MySQL defaults to 3306)
+   - Click **Open**.
+3. **Seed Database & Create Read-Only User**:
+   - **Option A (Sample Store DB)**: In HeidiSQL, go to **File $\rightarrow$ Load SQL file...**, select [`infra/mysql/seed.sql`](infra/mysql/seed.sql), and press **F9** (Run) to create and populate the `ecommerce` database.
+   - **Option B (Your Own DB)**: Use your existing database (e.g. `your_database`).
+   - **Create the Bot's Read-Only User**: In a new HeidiSQL query tab (`Ctrl + T`), run:
+     ```sql
+     CREATE USER IF NOT EXISTS 'nl2sql_ro'@'%' IDENTIFIED BY 'nl2sql_ro_pass';
+     GRANT SELECT ON `ecommerce`.* TO 'nl2sql_ro'@'%';
+     FLUSH PRIVILEGES;
+     ```
+     *(Replace `ecommerce` with your database name if using your own DB, and choose a secure password).*
+
+---
+
+### 3. Download Model & Configure Environment
+
 In PowerShell:
 ```powershell
-# Pull the AI model
+# 1. Pull the AI model in Ollama
 ollama pull qwen2.5-coder:7b
 
-# Clone repo & create .env
+# 2. Clone repo & create .env
 git clone https://github.com/adrianopris31/natural-to-sql.git
 cd natural-to-sql
 copy .env.example .env
 ```
-Edit `.env` to point `TARGET_DB_URL` to your local Windows MySQL database (e.g. `mysql+asyncmy://nl2sql_ro:password@127.0.0.1:3306/your_database`).
 
-### 3. Start Application (Single Command)
-Just like `make dev` on macOS/Linux, Windows has a 1-command launcher:
+Open `.env` in an editor and update `TARGET_DB_URL` to match your local Windows MySQL credentials on port **3306**:
+```env
+TARGET_DB_URL=mysql+asyncmy://nl2sql_ro:nl2sql_ro_pass@127.0.0.1:3306/ecommerce
+```
+
+Initialize the Python 3.12 environment and dependencies:
+```powershell
+cd backend
+uv python install 3.12
+uv sync
+cd ..
+```
+
+---
+
+### 4. Start Application (Single Command)
+
+Make sure Ollama is running (`ollama serve`), then run the 1-command Windows launcher:
 ```powershell
 .\dev.ps1
 ```
-*(Alternatively, you can simply double-click `dev.bat` in Windows File Explorer).*
+*(Alternatively, you can double-click `dev.bat` in Windows File Explorer).*
 
-This automatically launches both the FastAPI backend (`http://127.0.0.1:8000`) and Next.js frontend (`http://localhost:3000`) concurrently.
+This launches both the FastAPI backend (`http://127.0.0.1:8000`) and Next.js frontend (`http://localhost:3000`) concurrently in separate console windows.
 
 Open **[http://localhost:3000](http://localhost:3000)** in your browser!
+
+---
+
+### 💡 Windows Troubleshooting Tips
+
+- **HeidiSQL / MySQL Connection Refused (`10061` / Can't connect to MySQL server)**:
+  The MySQL Windows service is offline. Open `services.msc`, locate `wampmysqld64` (or `MySQL`), right-click and select **Start**. On WampServer, ensure the system tray icon is Green.
+- **Port 3306 vs 3307**:
+  The `.env.example` file defaults to port `3307` for Docker. On native Windows MySQL installations (including WampServer's MySQL), the default port is **`3306`**. Make sure your `.env` has `127.0.0.1:3306`.
+- **`pnpm` MODULE_NOT_FOUND (Corepack issue in Node 24)**:
+  If `pnpm` errors out with `Cannot find module ... pnpm.cjs`, run:
+  ```powershell
+  npm install -g pnpm
+  ```
+- **PowerShell Execution Policy Error**:
+  If running `.\dev.ps1` gives an execution policy error, run:
+  ```powershell
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+  .\dev.ps1
+  ```
 
 ---
 

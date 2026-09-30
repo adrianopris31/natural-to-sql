@@ -2,7 +2,7 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Phase 8 done: SQL preview/approval, EXPLAIN gate, multi-query (≤3), read-only refusal of write requests, risk red flags, full SQL audit log. P2.4 defense-in-depth isolation test added (L1-only verified). History passed to repair loop. Playwright E2E suite added (P8.10). Fixed post-approval state stepper regression to "validating" (now advances to "executing"). Backend: 293 tests passing; Frontend: 57 tests passing; ruff/mypy/eslint/tsc clean.
+Phase 8 done; verified on Windows 10/11 development environment (different chat session): fixed Node 24 Corepack pnpm issue, ensured cross-platform forward-slash path normalization with as_posix() in config.py, verified backend & frontend test suites (all passing), and documented Windows WampServer/MySQL/HeidiSQL setup.
 
 ## NEXT
 1. **P8.8** Live check with Ollama (`ollama serve`) on `easybiz_data_1`: preview → Run / Edit / Cancel; "delete user" → Not performed; a risky query → red banner + Run anyway; SQL log panel.
@@ -66,6 +66,7 @@ none
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
+- 2026-09-30 (Windows chat session): Fixed Windows Corepack pnpm.cjs shim & installed frontend dependencies; normalized config.py paths with as_posix() for macOS/Windows parity; updated dev.ps1 pnpm fallback; documented Windows WampServer/HeidiSQL walkthrough & troubleshooting in README.md.
 - 2026-09-30: Completed P2.4 (L1-only isolation tests), history-in-repair loop, Playwright E2E suite (P8.10), and fixed post-approval state regression to "validating" (now "executing"). 293 backend + 57 frontend tests passing.
 - 2026-09-29: Claude: read-only refusal (fixes "delete user" → "Completed"), risk red flags + Run-anyway confirmation, full SQL audit log + UI panel; docs updated (see E).
 - 2026-09-29: Claude: fixed validator H1–H5; built preview/approval + EXPLAIN gate + multi-query (backend + frontend + tests); updated PLAN §2/§3/§5/§6 and GEMINI rules.

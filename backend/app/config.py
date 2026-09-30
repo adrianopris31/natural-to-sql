@@ -72,10 +72,10 @@ class Settings(BaseSettings):
         p = Path(value)
         if not p.is_absolute():
             backend_dir = Path(__file__).resolve().parent.parent
-            if value.startswith("backend/"):
-                return str((backend_dir.parent / value).resolve())
-            return str((backend_dir / value).resolve())
-        return str(p.resolve())
+            if value.startswith("backend/") or value.startswith("backend\\"):
+                return (backend_dir.parent / value).resolve().as_posix()
+            return (backend_dir / value).resolve().as_posix()
+        return p.resolve().as_posix()
 
     @field_validator(
         "CORS_ORIGINS",

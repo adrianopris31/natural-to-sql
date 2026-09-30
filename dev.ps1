@@ -9,10 +9,20 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 }
 
-# Check if pnpm is installed
-if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Write-Host "[!] 'pnpm' not found. Enabling pnpm via corepack..." -ForegroundColor Yellow
-    corepack enable pnpm
+# Check if pnpm is installed and functional
+$pnpmOk = $false
+try {
+    if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+        $testOut = & pnpm --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and $testOut -match '^\d+\.') { $pnpmOk = $true }
+    }
+} catch {
+    $pnpmOk = $false
+}
+
+if (-not $pnpmOk) {
+    Write-Host "[!] 'pnpm' not working or not found. Installing pnpm via npm..." -ForegroundColor Yellow
+    npm install -g pnpm
 }
 
 # Launch Backend in a background process window
