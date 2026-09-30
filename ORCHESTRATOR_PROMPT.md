@@ -11,6 +11,7 @@ Read these files completely, in this order:
 2. `PROGRESS.md`: the current status, next steps, open items, blockers and decisions
 3. `PLAN.md`: the architecture, the SQL safety design (§3), the API contract (§5) and the phases and tasks (§7)
 4. `.agents/rules/backend.md`, `.agents/rules/frontend.md`, `.agents/rules/testing.md`
+5. `REVIEW.md` (if it exists): findings from the independent Claude reviewer. Treat OPEN items as tasks; never edit this file (see GEMINI.md → "Independent reviewer").
 
 Then reply with a short **context check** of no more than 12 lines: the current phase, the next 3 task IDs, the open items or blockers, the safety layers you must never weaken, and a summary of any **CHANGES MADE BY CLAUDE** (or other outside changes) listed in PROGRESS.md. Code may have changed since your last session; trust the files, not your memory. Wait for my "go" before you write any code.
 

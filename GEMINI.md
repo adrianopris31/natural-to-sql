@@ -1,7 +1,7 @@
 # GEMINI.md — Natural-to-SQL Chatbot
 
 > Read this first, then read `PROGRESS.md` (current state, next steps, and **CHANGES MADE BY CLAUDE**), then `PLAN.md` (the full plan).
-> Domain rules are in `.agents/rules/` (backend, frontend, testing).
+> Domain rules are in `.agents/rules/` (backend, frontend, testing). Also read `REVIEW.md` (independent reviewer findings) if it exists.
 > ⚠️ Code was changed outside Antigravity on 2026-09-29 (Claude session): validator fixes, SSE heartbeat, and the **preview/approval + EXPLAIN + multi-query** feature (PLAN.md Phase 8). If the code differs from what you remember, trust the code + PROGRESS.md + PLAN.md, not your earlier context.
 
 ## What this project is
@@ -70,6 +70,13 @@ infra/     docker-compose.yml  mysql/seed.sql  mysql/create_readonly_user.sql
 7. **Keep it local:** no calls to cloud LLMs or telemetry. The backend binds to `127.0.0.1`.
 8. **Update `PROGRESS.md` at the end of every work session.** See the protocol below.
 9. Keep changes small and tested. A task is not done until its tests pass and PROGRESS.md is updated.
+
+## Independent reviewer (Claude): coexistence rules
+A separate Claude session reviews the code for bugs (prompt: `REVIEWER_PROMPT.md`). To avoid conflicts:
+- It works **only** in its own git worktree `../natural-to-sql-review` on `review/<date>` branches, and runs on ports **8100/3100**. It never edits this folder, except for **`REVIEW.md`**.
+- **`REVIEW.md` is owned by the reviewer.** Read it at the start of every session and treat its `OPEN` findings and "Doc drift" items as input (fix them with a normal task, then leave a LOG line in PROGRESS.md). **Never edit `REVIEW.md`**, and never touch `review/*` branches or the `../natural-to-sql-review` worktree.
+- Reviewer fixes reach `main` only when the **user** merges a `review/*` branch. After a merge, re-read the code; don't reapply or revert those fixes.
+- Keep using your own ports (8000/3000), `backend/data/` and `.env`. The reviewer won't touch them.
 
 ## Subagent routing
 - Anything in `backend/`, `infra/` or `evals/` → follow `.agents/rules/backend.md`
