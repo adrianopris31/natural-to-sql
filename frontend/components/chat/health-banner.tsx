@@ -15,8 +15,9 @@ export function HealthBanner() {
   const dbDown = health?.db === "error";
   const ollamaDown = health?.ollama === "error";
   const networkError = !!error;
+  const kbDown = Boolean(health?.knowledge_bot?.configured && !health?.knowledge_bot?.reachable);
 
-  const isDegraded = dbDown || ollamaDown || networkError;
+  const isDegraded = dbDown || ollamaDown || networkError || kbDown;
 
   if (!isDegraded) {
     return null;
@@ -25,7 +26,8 @@ export function HealthBanner() {
   const issues: string[] = [];
   if (dbDown) issues.push("Target Database unreachable");
   if (ollamaDown) issues.push("Ollama LLM service unreachable");
-  if (networkError && !dbDown && !ollamaDown) issues.push("Backend API connection failed");
+  if (kbDown) issues.push("Knowledge Bot unreachable (Docs Q&A unavailable)");
+  if (networkError && !dbDown && !ollamaDown && !kbDown) issues.push("Backend API connection failed");
 
   return (
     <div

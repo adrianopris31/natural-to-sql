@@ -1,11 +1,12 @@
 "use client";
 
-import { TurnStatus } from "@/lib/types";
+import { TurnKind, TurnStatus } from "@/lib/types";
 import { Check, Loader2, AlertCircle, Wrench, ShieldCheck, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StatusStepperProps {
   status: TurnStatus;
+  kind?: TurnKind;
   className?: string;
 }
 
@@ -14,7 +15,7 @@ interface StepDef {
   label: string;
 }
 
-const STEPS: StepDef[] = [
+const SQL_STEPS: StepDef[] = [
   { key: "generating_sql", label: "Generating SQL" },
   { key: "validating", label: "Validating" },
   { key: "explaining", label: "Checking plan" },
@@ -23,7 +24,12 @@ const STEPS: StepDef[] = [
   { key: "answering", label: "Answering" },
 ];
 
-export function StatusStepper({ status, className }: StatusStepperProps) {
+const DOCS_STEPS: StepDef[] = [
+  { key: "searching_docs", label: "Searching" },
+  { key: "answering", label: "Answering" },
+];
+
+export function StatusStepper({ status, kind = "sql", className }: StatusStepperProps) {
   // If status is done, show compact completed indicator
   if (status === "done") {
     return (
@@ -92,7 +98,8 @@ export function StatusStepper({ status, className }: StatusStepperProps) {
     );
   }
 
-  const stepOrder: TurnStatus[] = STEPS.map((s) => s.key);
+  const steps = kind === "docs" ? DOCS_STEPS : SQL_STEPS;
+  const stepOrder: TurnStatus[] = steps.map((s) => s.key);
   const currentIdx = stepOrder.indexOf(status === "repairing" ? "validating" : status);
 
   return (
@@ -101,7 +108,7 @@ export function StatusStepper({ status, className }: StatusStepperProps) {
       role="status"
       aria-label="Generation progress"
     >
-      {STEPS.map((step, idx) => {
+      {steps.map((step, idx) => {
         const isCurrent = status === step.key;
         const isPast = currentIdx > idx;
         const isRepairing = status === "repairing" && step.key === "validating";

@@ -19,6 +19,7 @@ class ConversationSummary(BaseModel):
     id: str
     title: str
     updated_at: str
+    last_kind: str = "sql"
 
 
 class QueryResponse(BaseModel):
@@ -39,6 +40,7 @@ class TurnResponse(BaseModel):
     """Full detail of a conversation turn matching frontend Turn model."""
 
     id: str
+    kind: str = "sql"
     question: str
     sql: str | None = None
     columns: list[str] | None = None
@@ -47,6 +49,7 @@ class TurnResponse(BaseModel):
     truncated: bool | None = None
     queries: list[QueryResponse] | None = None
     answer: str | None = None
+    sources: list[dict[str, Any]] | None = None
     status: str
     error: str | None = None
     created_at: str
@@ -69,6 +72,7 @@ async def get_conversations() -> list[ConversationSummary]:
             id=c.id,
             title=c.title,
             updated_at=c.updated_at.isoformat(),
+            last_kind=c.turns[-1].kind if c.turns and hasattr(c.turns[-1], "kind") else "sql",
         )
         for c in convs
     ]
@@ -93,10 +97,14 @@ async def get_conversation_by_id(conversation_id: str) -> ConversationDetail:
             if t.queries_json
             else None
         )
+        sources: list[dict[str, Any]] | None = (
+            json.loads(t.sources_json) if t.sources_json else None
+        )
 
         turn_models.append(
             TurnResponse(
                 id=t.id,
+                kind=getattr(t, "kind", "sql") or "sql",
                 question=t.question,
                 sql=t.sql,
                 columns=cols,
@@ -105,6 +113,7 @@ async def get_conversation_by_id(conversation_id: str) -> ConversationDetail:
                 truncated=t.truncated,
                 queries=queries,
                 answer=t.answer,
+                sources=sources,
                 status=t.status,
                 error=t.error,
                 created_at=t.created_at.isoformat(),

@@ -8,6 +8,7 @@ import {
   HealthResponse,
   SchemaRefreshResponse,
   SSEEvent,
+  TurnKind,
 } from "./types";
 import { consumeSSEStream } from "./sse";
 
@@ -99,11 +100,13 @@ export async function chatStream(
   message: string,
   conversationId?: string,
   onEvent?: (ev: SSEEvent) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mode?: TurnKind
 ): Promise<void> {
   const body: ChatRequest = {
     message,
     ...(conversationId ? { conversation_id: conversationId } : {}),
+    ...(mode ? { mode } : {}),
   };
   return streamSSE("/chat", body, onEvent, signal);
 }

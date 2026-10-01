@@ -16,6 +16,7 @@ from app.api.schema import router as schema_router
 from app.config import get_settings
 from app.core.db import check_db_health, close_engine
 from app.core.schema import get_schema_cache
+from app.integrations.knowledge_bot import docs_health
 from app.llm.client import LLMClient, OllamaClient
 from app.store.database import close_app_db, init_app_db
 
@@ -94,6 +95,11 @@ app.include_router(schema_router)
 app.include_router(audit_router)
 
 
+class KnowledgeBotHealth(BaseModel):
+    configured: bool
+    reachable: bool
+
+
 class HealthResponse(BaseModel):
     """Health check response conforming to PLAN.md §5."""
 
@@ -101,19 +107,26 @@ class HealthResponse(BaseModel):
     ollama: Literal["ok", "error"]
     model: str
     db_version: str
+    knowledge_bot: KnowledgeBotHealth
 
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    """Return health status of database and LLM service."""
+    """Return health status of database, LLM service, and knowledge base."""
     current_settings = get_settings()
     db_ok, db_version = await check_db_health()
     client = get_llm_client()
     ollama_ok, _ = await client.check_health()
+    kb_health = await docs_health()
 
     return HealthResponse(
         db="ok" if db_ok else "error",
         ollama="ok" if ollama_ok else "error",
         model=current_settings.OLLAMA_MODEL,
         db_version=db_version,
+        knowledge_bot=KnowledgeBotHealth(
+            configured=kb_health["configured"],
+            reachable=kb_health["reachable"],
+        ),
     )
+

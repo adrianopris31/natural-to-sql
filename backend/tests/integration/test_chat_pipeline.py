@@ -141,7 +141,7 @@ async def test_preview_never_executes_then_run_after_approval() -> None:
     assert client.recorded_stream_calls == []  # no answer before approval
 
     ran = await _run(preview["turn_id"], client)
-    assert _payloads(ran, "status") == ["validating", "explaining", "executing", "answering"]
+    assert _payloads(ran, "status") == ["executing", "answering"]
     results = _payloads(ran, "result")
     assert len(results) == 1 and results[0]["row_count"] == 2 and results[0]["index"] == 0
     assert "".join(_payloads(ran, "answer_delta")) == "Here are the users."

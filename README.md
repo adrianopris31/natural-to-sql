@@ -20,6 +20,7 @@ Built for **MySQL 9.0 / 8.0+**, powered by native **Ollama (`qwen2.5-coder:7b`)*
 - [Key Features](#-key-features)
 - [Architecture & Data Pipeline](#-architecture--data-pipeline)
 - [14-Layer Defense-in-Depth Security Matrix](#-14-layer-defense-in-depth-security-matrix)
+- [Knowledge-Bot Integration (Jira / Slack / Docs Q&A)](#-knowledge-bot-integration-jira--slack--docs-qa)
 - [Prerequisites](#-prerequisites)
 - [Quickstart (Local Native Mac / Linux)](#-quickstart-local-native-mac--linux)
 - [Quickstart (Native Windows Setup)](#-quickstart-native-windows-setup-no-wsl-no-docker-required)
@@ -30,6 +31,7 @@ Built for **MySQL 9.0 / 8.0+**, powered by native **Ollama (`qwen2.5-coder:7b`)*
 - [Configuration Reference (`.env`)](#-configuration-reference-env)
 - [Testing & Verification](#-testing--verification)
 - [Evaluation Benchmark](#-evaluation-benchmark)
+- [Roadmap & Future Extensions](#-roadmap--future-extensions)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
 
 ---
@@ -39,6 +41,7 @@ Built for **MySQL 9.0 / 8.0+**, powered by native **Ollama (`qwen2.5-coder:7b`)*
 - 🛡️ **14-Layer Defense-in-Depth Security**: AST parsing (`sqlglot`), statement allowlists, prohibited function checks, catalog restriction, strict row limits, and non-bypassable `START TRANSACTION READ ONLY` enforcement.
 - 👁️ **Human-in-the-Loop Preview & Approval**: Generated SQL is **never executed automatically**. Review the proposed query, inspect its estimated cost and row counts, edit the query if desired, or cancel.
 - ⚡ **MySQL `EXPLAIN FORMAT=JSON` Gate**: Every query is cost-analyzed prior to preview and prior to execution. Queries exceeding cost or row thresholds are automatically blocked from execution.
+- 📚 **Unified Knowledge-Bot Integration (Jira / Slack / Docs)**: Seamlessly switch between structured SQL data queries and unstructured team documentation, Jira issues, and Slack threads with direct source citation links.
 - 🔍 **Multi-Query Intelligence**: Complex questions with multiple components automatically generate up to 3 independent `SELECT` queries that run in parallel and are synthesized into a single cohesive answer.
 - 🚫 **Proactive Write Refusal**: Intent detection identifies destructive requests (e.g., *"delete user 42"*, *"drop table orders"*) up front, immediately returning an explicit *"Not performed (read-only)"* notice without invoking LLM tokens.
 - 🚩 **Automated Risk Assessment**: Queries involving Cartesian products (`CROSS JOIN`), missing `LIMIT` clauses on large tables, or full table scans display warning badges and require explicit *"Run anyway"* confirmation.
@@ -107,6 +110,57 @@ No single security measure is relied upon. Even if the LLM produces malicious or
 | **L12** | **`EXPLAIN` Cost Gate** | `app/core/explain.py` | Runs `EXPLAIN FORMAT=JSON` in read-only transaction; blocks if cost > threshold. | Catastrophic query complexity, combinatorial explosion, DB lockups. |
 | **L13** | **Human-in-the-Loop Approval** | `app/api/chat.py` | Queries are previewed only; execution requires explicit `POST .../run`. | Accidental execution of unintended, expensive, or misunderstood queries. |
 | **L14** | **Write Refusal & Risk Warnings**| `app/core/intent.py` | Rejects mutation prompts up front; flags risky queries with red banners. | Social engineering prompts, confusing confirmation dialogs. |
+
+---
+
+## 📚 Knowledge-Bot Integration (Jira / Slack / Docs Q&A)
+
+`natural-to-sql` integrates with **knowledge-bot** (running on port `8100`), serving as a single unified chat application for both **structured tabular data** and **unstructured team knowledge**:
+
+```
+                                 +-------------------------+
+                                 |    Next.js 15 Web UI    |
+                                 |    [ Data | Docs ]      |
+                                 +------------+------------+
+                                              |
+                   +--------------------------+--------------------------+
+                   | Mode: "sql"                                         | Mode: "docs"
+                   v                                                     v
+      +------------------------+                             +------------------------+
+      |  FastAPI Backend :8000 |                             |  FastAPI Backend :8000 |
+      |  - Ollama LLM (:11434) |                             |  - integrations/       |
+      |  - 14-layer SQL Safety |                             |    knowledge_bot.py    |
+      |  - EXPLAIN Cost Gate   |                             +-----------+------------+
+      |  - Preview & Approval  |                                         | HTTP /v1/ask (X-API-Key)
+      +-----------+------------+                                         v
+                  |                                          +------------------------+
+                  v                                          |  Knowledge-Bot :8100   |
+      +------------------------+                             |  - Jira Tickets        |
+      | Target MySQL Database  |                             |  - Slack Channels      |
+      | (Dedicated Read-Only)  |                             |  - Markdown Runbooks   |
+      +------------------------+                             +------------------------+
+```
+
+### How Docs Mode Works
+1. **Segmented Mode Toggle**: Switch between **Data** (database analytics) and **Docs** (Jira/Slack/documentation Q&A) directly above the prompt bar. Your active mode is saved in `localStorage`.
+2. **Source Filter Chips**: In Docs mode, filter chips (**All**, **Jira**, **Slack**, **Docs**) allow targeting specific sources by prepending `jira:`, `slack:`, or `doc:`.
+3. **Interactive Citation Badges**: Answers display Markdown along with interactive source chips linking directly to Jira tickets, Slack threads, or team documents.
+4. **Honest Refusal Handling**: When documentation does not contain an answer, a distinct *"Not found in the documents"* notice is displayed instead of hallucinating.
+5. **Zero SQL Footprint**: Docs turns never generate SQL, touch the database, or trigger the approval gate.
+6. **Non-Blocking Health Check**: If Knowledge-Bot is offline, a warning banner alerts the user, while Data mode queries continue functioning without interruption.
+
+### Starting Knowledge-Bot
+To run the companion service:
+```bash
+cd /path/to/knowledge-bot-2
+venv/bin/uvicorn knowledge_bot.serving.api:app --host 127.0.0.1 --port 8100
+```
+Configure your `.env`:
+```ini
+KNOWLEDGE_BOT_URL=http://127.0.0.1:8100
+KNOWLEDGE_BOT_API_KEY=your_api_key_here
+KNOWLEDGE_BOT_TIMEOUT_SEC=90.0
+```
 
 ---
 
@@ -530,6 +584,9 @@ Restart the application (`make dev` or `make docker-up`). The application will:
 | `DENY_TABLES` | `migrations` | Comma-separated table names hidden from model context. |
 | `DENY_COLUMNS` | `password,...` | Comma-separated columns hidden from model context. |
 | `CORS_ORIGINS` | `http://localhost:3000` | Allowed origins for FastAPI CORS middleware. |
+| `KNOWLEDGE_BOT_URL` | `http://127.0.0.1:8100` | HTTP endpoint of the Knowledge-Bot Q&A service. |
+| `KNOWLEDGE_BOT_API_KEY` | `""` | API authentication key (`X-API-Key`) for Knowledge-Bot. |
+| `KNOWLEDGE_BOT_TIMEOUT_SEC` | `90.0` | Timeout in seconds for docs/Jira/Slack retrieval requests. |
 
 ---
 
@@ -581,6 +638,20 @@ Evaluation compares the actual database results of generated queries against gro
 - Multi-turn conversational follow-ups
 
 Results are stored in `backend/evals/results/<timestamp>-<model>-<prompt_version>.json`.
+
+---
+
+## 🚀 Roadmap & Future Extensions
+
+### 1. Headless External API Service (`POST /v1/query`)
+- **Headless Querying**: Allow external clients (backend services, Slack bots, scripts, automated workflows) to query the database programmatically via `X-API-Key` authentication.
+- **Automated Risk Gating**: Safe queries (`risk.level < high` and `explain.blocked == false`) execute automatically inside read-only transactions; high-risk queries return an explicit `EXPLAIN_BLOCKED` response without running.
+- **Unified Querying**: Supports both `mode: "sql"` and `mode: "docs"`, delivering structured answers, SQL queries, and rows over standard JSON responses.
+
+### 2. Multi-Database Architecture & Dynamic Switching
+- **Current State**: Single target database configured via `TARGET_DB_URL` in `.env`.
+- **UI Database Selector**: Enable switching between configured databases directly from the Web UI (e.g., `ecommerce`, `analytics`, `crm`).
+- **Connection Registry**: Maintain safe, pre-introspected connection pools with strict read-only guarantees without passing untrusted connection strings over the network.
 
 ---
 

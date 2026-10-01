@@ -189,4 +189,41 @@ describe("useChat Hook", () => {
     expect(result.current.activeConversationId).toBeUndefined();
     expect(result.current.turns).toHaveLength(0);
   });
+
+  it("streams docs questions directly to done without entering awaiting_approval gate", async () => {
+    const { result } = renderHook(() => useChat());
+
+    await act(async () => {
+      await result.current.send("How do we deploy to production?", "docs");
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
+
+    expect(result.current.turns).toHaveLength(1);
+    const turn = result.current.turns[0];
+    expect(turn.kind).toBe("docs");
+    expect(turn.status).toBe("done");
+    expect(turn.queries).toBeNull();
+    expect(turn.sql).toBeNull();
+    expect(turn.answer).toContain("According to deployment documentation");
+    expect(turn.sources).toHaveLength(3);
+    expect(turn.sources![0].source_type).toBe("jira");
+    expect(turn.sources![1].source_type).toBe("doc");
+    expect(turn.sources![2].source_type).toBe("slack");
+  });
+
+  it("handles docs questions with refusal (not found in documents)", async () => {
+    const { result } = renderHook(() => useChat());
+
+    await act(async () => {
+      await result.current.send("Topic not found in any docs", "docs");
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
+
+    expect(result.current.turns).toHaveLength(1);
+    const turn = result.current.turns[0];
+    expect(turn.kind).toBe("docs");
+    expect(turn.status).toBe("done");
+    expect(turn.sources).toHaveLength(0);
+    expect(turn.answer).toContain("do not contain information");
+  });
 });

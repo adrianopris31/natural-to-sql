@@ -5,7 +5,7 @@ import { deleteConversation, fetchConversations } from "@/lib/api";
 import { ConversationSummary } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { SchemaBrowser } from "./schema-browser";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Database, FileText, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -90,6 +90,7 @@ export function Sidebar({
           <div className="space-y-0.5" role="list">
             {conversations.map((conv: ConversationSummary) => {
               const isActive = activeConversationId === conv.id;
+              const isDocs = conv.last_kind === "docs";
               return (
                 <div
                   key={conv.id}
@@ -106,8 +107,13 @@ export function Sidebar({
                     onClick={() => onSelectConversation(conv.id)}
                     className="flex flex-1 items-center gap-2 truncate text-left focus-visible:outline-none"
                     aria-current={isActive ? "page" : undefined}
+                    data-kind={conv.last_kind || "sql"}
                   >
-                    <MessageSquare className="size-3.5 shrink-0 opacity-70" />
+                    {isDocs ? (
+                      <FileText className="size-3.5 shrink-0 opacity-70 text-blue-500" aria-label="Docs conversation" />
+                    ) : (
+                      <Database className="size-3.5 shrink-0 opacity-70" aria-label="Data conversation" />
+                    )}
                     <span className="truncate">{conv.title}</span>
                   </button>
 

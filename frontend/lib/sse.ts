@@ -8,6 +8,8 @@ import {
   SSEDoneData,
   SSEClarificationData,
   SSEErrorData,
+  DocsAnswerPayload,
+  DocsSource,
 } from "./types";
 
 /**
@@ -82,6 +84,19 @@ export function parseSSEData(eventType: string, rawData: string): SSEEvent | nul
     case "answer_delta": {
       const deltaVal = isJson && typeof parsedJson === "string" ? parsedJson : rawData;
       return { type: "answer_delta", data: deltaVal };
+    }
+    case "docs_answer": {
+      if (isJson && typeof parsedJson === "object" && parsedJson !== null) {
+        const obj = parsedJson as Record<string, unknown>;
+        const docsData: DocsAnswerPayload = {
+          answer: String(obj.answer ?? ""),
+          sources: Array.isArray(obj.sources) ? (obj.sources as DocsSource[]) : [],
+          refused: Boolean(obj.refused),
+          model: String(obj.model ?? ""),
+        };
+        return { type: "docs_answer", data: docsData };
+      }
+      return null;
     }
     case "done": {
       if (isJson && typeof parsedJson === "object" && parsedJson !== null) {

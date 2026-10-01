@@ -25,6 +25,10 @@ describe("API Client (lib/api.ts)", () => {
       ollama: "ok",
       model: "qwen2.5-coder:7b",
       db_version: "9.0.1",
+      knowledge_bot: {
+        configured: true,
+        reachable: true,
+      },
     });
   });
 
@@ -107,5 +111,27 @@ describe("API Client (lib/api.ts)", () => {
     if (errEvent && errEvent.type === "error") {
       expect(errEvent.data.message).toBe("Failed to parse query safely");
     }
+  });
+
+  it("streams docs answer directly for docs mode", async () => {
+    const events: SSEEvent[] = [];
+    await chatStream(
+      "How to deploy?",
+      undefined,
+      (ev) => {
+        events.push(ev);
+      },
+      undefined,
+      "docs"
+    );
+
+    expect(events[0]).toEqual({ type: "status", data: "searching_docs" });
+    const docsAnswer = events.find((e) => e.type === "docs_answer");
+    expect(docsAnswer).toBeDefined();
+    if (docsAnswer && docsAnswer.type === "docs_answer") {
+      expect(docsAnswer.data.answer).toContain("According to deployment documentation");
+      expect(docsAnswer.data.sources).toHaveLength(3);
+    }
+    expect(events.some((e) => e.type === "done")).toBe(true);
   });
 });
