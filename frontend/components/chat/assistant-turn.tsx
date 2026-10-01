@@ -10,7 +10,8 @@ import { ErrorAlert } from "./error-alert";
 import { ExplainSummary } from "./explain-summary";
 import { QueryPreview } from "./query-preview";
 import { RefusedCard } from "./refused-card";
-import { Bot } from "lucide-react";
+import { DocsAnswer } from "./docs-answer";
+import { Bot, FileText } from "lucide-react";
 
 interface AssistantTurnProps {
   turn: Turn;
@@ -62,6 +63,30 @@ export function AssistantTurn({ turn, isStreaming = false, onRetry, onRun, onCan
   const legacyHasSql = !queries && !!turn.sql;
   const legacyHasResults = !queries && !!(turn.columns && turn.columns.length > 0 && turn.rows);
 
+  // Handle docs turns
+  if (turn.kind === "docs") {
+    return (
+      <div className="flex gap-3 my-4">
+        {/* Docs Avatar */}
+        <div className="flex size-8 shrink-0 select-none items-center justify-center rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+          <FileText className="size-4" />
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          <StatusStepper status={turn.status} kind="docs" />
+
+          {isError && (
+            <ErrorAlert message={turn.error || "An unknown error occurred"} onRetry={onRetry} />
+          )}
+
+          {!isError && (
+            <DocsAnswer turn={turn} isStreaming={isStreaming && !isComplete} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex gap-3 my-4">
       {/* Bot Avatar */}
@@ -70,7 +95,7 @@ export function AssistantTurn({ turn, isStreaming = false, onRetry, onRun, onCan
       </div>
 
       <div className="flex-1 min-w-0 space-y-2">
-        <StatusStepper status={turn.status} />
+        <StatusStepper status={turn.status} kind="sql" />
 
         {isAwaitingApproval && queries && (
           <QueryPreview

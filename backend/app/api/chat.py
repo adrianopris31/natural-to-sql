@@ -1,6 +1,4 @@
-"""API router for SSE chat streaming."""
-
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -11,6 +9,8 @@ from app.core.db import get_engine
 from app.core.schema import get_schema_cache
 from app.llm.client import LLMClient, OllamaClient
 from app.services.chat import cancel_turn, process_chat, run_approved_turn, with_heartbeat
+from app.services.docs import process_docs_chat
+from app.store.database import get_turn
 
 HEARTBEAT_INTERVAL_SEC = 10.0
 
@@ -22,6 +22,8 @@ class ChatRequest(BaseModel):
 
     conversation_id: str | None = None
     message: str
+    mode: Literal["sql", "docs"] = "sql"
+
 
 
 class RunRequest(BaseModel):
@@ -53,18 +55,24 @@ async def chat_endpoint(
     client: Annotated[LLMClient, Depends(get_chat_llm_client)],
 ) -> StreamingResponse:
     """Stream chat response events via Server-Sent Events (SSE)."""
-    settings = get_settings()
-    engine = get_engine()
-    schema_cache = get_schema_cache()
+    if request.mode == "docs":
+        event_generator = process_docs_chat(
+            message=request.message,
+            conversation_id=request.conversation_id,
+        )
+    else:
+        settings = get_settings()
+        engine = get_engine()
+        schema_cache = get_schema_cache()
 
-    event_generator = process_chat(
-        message=request.message,
-        conversation_id=request.conversation_id,
-        client=client,
-        engine=engine,
-        schema_cache=schema_cache,
-        settings=settings,
-    )
+        event_generator = process_chat(
+            message=request.message,
+            conversation_id=request.conversation_id,
+            client=client,
+            engine=engine,
+            schema_cache=schema_cache,
+            settings=settings,
+        )
 
     return StreamingResponse(
         with_heartbeat(event_generator, HEARTBEAT_INTERVAL_SEC),
@@ -80,6 +88,12 @@ async def run_turn_endpoint(
     client: Annotated[LLMClient, Depends(get_chat_llm_client)],
 ) -> StreamingResponse:
     """Execute a previewed turn after user approval; streams results and the answer (SSE)."""
+    turn = await get_turn(turn_id)
+    if turn is not None and getattr(turn, "kind", "sql") == "docs":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Docs turns cannot be run or approved",
+        )
     event_generator = run_approved_turn(
         turn_id=turn_id,
         sql_overrides=request.queries,
@@ -98,8 +112,15 @@ async def run_turn_endpoint(
 @router.post("/{turn_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_turn_endpoint(turn_id: str) -> None:
     """Discard a previewed turn without running it."""
+    turn = await get_turn(turn_id)
+    if turn is not None and getattr(turn, "kind", "sql") == "docs":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Docs turns cannot be cancelled",
+        )
     if not await cancel_turn(turn_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Turn not found or not awaiting approval",
         )
+

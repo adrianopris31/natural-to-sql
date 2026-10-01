@@ -15,11 +15,13 @@ export const mockConversations: ConversationSummary[] = [
     id: "conv-1",
     title: "Top 10 users by total spend",
     updated_at: "2026-09-28T12:00:00Z",
+    last_kind: "sql",
   },
   {
     id: "conv-2",
     title: "Monthly revenue in 2025",
     updated_at: "2026-09-28T14:30:00Z",
+    last_kind: "docs",
   },
 ];
 
@@ -86,6 +88,10 @@ export const mockHealth: HealthResponse = {
   ollama: "ok",
   model: "qwen2.5-coder:7b",
   db_version: "9.0.1",
+  knowledge_bot: {
+    configured: true,
+    reachable: true,
+  },
 };
 
 export function mockPreviewQuery(
@@ -197,14 +203,92 @@ export const handlers = [
 
   // Chat SSE Stream
   http.post("/api/chat", async ({ request }) => {
-    const body = (await request.json()) as { message?: string; conversation_id?: string };
+    const body = (await request.json()) as {
+      message?: string;
+      conversation_id?: string;
+      mode?: "sql" | "docs";
+    };
     const message = body.message || "";
     const conversationId = body.conversation_id || "conv-mock-123";
+    const mode = body.mode || "sql";
 
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
+        if (mode === "docs") {
+          controller.enqueue(encoder.encode(": ping\n\n"));
+          controller.enqueue(encoder.encode("event: status\ndata: searching_docs\n\n"));
+
+          if (message.toLowerCase().includes("error")) {
+            controller.enqueue(
+              encoder.encode(
+                'event: error\ndata: {"message":"Knowledge base service unreachable","code":"KNOWLEDGE_BOT_ERROR"}\n\n'
+              )
+            );
+            controller.close();
+            return;
+          }
+
+          if (message.toLowerCase().includes("not found")) {
+            controller.enqueue(
+              encoder.encode(
+                `event: docs_answer\ndata: ${JSON.stringify({
+                  conversation_id: conversationId,
+                  turn_id: "turn-docs-refused",
+                  answer: "The provided documents do not contain information to answer this question.",
+                  sources: [],
+                  refused: true,
+                  model: "gpt-4o-mini",
+                })}\n\n`
+              )
+            );
+          } else {
+            controller.enqueue(
+              encoder.encode(
+                `event: docs_answer\ndata: ${JSON.stringify({
+                  conversation_id: conversationId,
+                  turn_id: "turn-docs-1",
+                  answer: "According to deployment documentation and Jira ticket PROJ-42, production releases require staging sign-off.",
+                  sources: [
+                    {
+                      id: "PROJ-42",
+                      source_type: "jira",
+                      title: "Production Deployment Checklist",
+                      url: "https://jira.example.com/browse/PROJ-42",
+                      score: 0.95,
+                    },
+                    {
+                      id: "DOC-101",
+                      source_type: "doc",
+                      title: "Release Runbook",
+                      url: "https://docs.example.com/runbook",
+                      score: 0.88,
+                    },
+                    {
+                      id: "SLACK-88",
+                      source_type: "slack",
+                      title: "#deployments discussion",
+                      url: "https://slack.example.com/archives/C123/p456",
+                      score: 0.75,
+                    },
+                  ],
+                  refused: false,
+                  model: "gpt-4o-mini",
+                })}\n\n`
+              )
+            );
+          }
+
+          controller.enqueue(
+            encoder.encode(
+              `event: done\ndata: {"conversation_id":"${conversationId}","turn_id":"turn-docs-1"}\n\n`
+            )
+          );
+          controller.close();
+          return;
+        }
+
         if (message.toLowerCase().includes("clarify")) {
           controller.enqueue(
             encoder.encode("event: status\ndata: generating_sql\n\n")

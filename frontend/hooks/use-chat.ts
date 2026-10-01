@@ -2,14 +2,15 @@
 
 import { useCallback, useRef, useState } from "react";
 import { cancelTurn as cancelTurnApi, chatStream, runTurnStream } from "@/lib/api";
-import { ConversationDetail, SSEEvent, Turn, TurnQuery, TurnStatus } from "@/lib/types";
+import { ConversationDetail, SSEEvent, Turn, TurnKind, TurnQuery, TurnStatus } from "@/lib/types";
 
 export interface UseChatReturn {
   turns: Turn[];
   isStreaming: boolean;
   activeConversationId: string | undefined;
   activeStatus: TurnStatus | null;
-  sendMessage: (message: string, convId?: string) => Promise<void>;
+  sendMessage: (message: string, convId?: string, mode?: TurnKind) => Promise<void>;
+  send: (message: string, mode?: TurnKind, convId?: string) => Promise<void>;
   /** Approve a previewed turn. `editedSql[i]` replaces query i (null/undefined = unchanged). */
   runTurn: (turnId: string, editedSql?: (string | null)[]) => Promise<void>;
   cancelTurn: (turnId: string) => Promise<void>;
@@ -113,17 +114,20 @@ export function useChat(initialConversationId?: string): UseChatReturn {
             case "preview": {
               receivedTerminalEvent = true;
               const serverId = ev.data.turn_id || idRef.current;
-              updateTurn((t) => ({
-                ...t,
-                id: serverId,
-                status: "awaiting_approval",
-                queries: ev.data.queries,
-                sql: ev.data.queries.map((q) => q.sql).join("\n\n"),
-                error: null,
-              }));
+              updateTurn((t) => {
+                if (t.kind === "docs") return t;
+                return {
+                  ...t,
+                  id: serverId,
+                  status: "awaiting_approval",
+                  queries: ev.data.queries,
+                  sql: ev.data.queries.map((q) => q.sql).join("\n\n"),
+                  error: null,
+                };
+              });
               idRef.current = serverId;
               if (ev.data.conversation_id) setActiveConversationId(ev.data.conversation_id);
-              setActiveStatus("awaiting_approval");
+              setActiveStatus((s) => (s === "searching_docs" ? s : "awaiting_approval"));
               break;
             }
             case "result":
@@ -134,6 +138,15 @@ export function useChat(initialConversationId?: string): UseChatReturn {
                 ...t,
                 status: "answering",
                 answer: (t.answer || "") + ev.data,
+              }));
+              setActiveStatus("answering");
+              break;
+            case "docs_answer":
+              updateTurn((t) => ({
+                ...t,
+                answer: ev.data.answer,
+                sources: ev.data.sources,
+                status: "answering",
               }));
               setActiveStatus("answering");
               break;
@@ -198,7 +211,7 @@ export function useChat(initialConversationId?: string): UseChatReturn {
   );
 
   const sendMessage = useCallback(
-    async (message: string, convId?: string) => {
+    async (message: string, convId?: string, mode: TurnKind = "sql") => {
       if (!message.trim() || isStreaming) {
         return;
       }
@@ -207,9 +220,11 @@ export function useChat(initialConversationId?: string): UseChatReturn {
 
       const turnId = `turn-${Date.now()}`;
       const conversationId = convId ?? activeConversationId;
+      const initialStatus: TurnStatus = mode === "docs" ? "searching_docs" : "generating_sql";
 
       const newTurn: Turn = {
         id: turnId,
+        kind: mode,
         question: message.trim(),
         sql: null,
         columns: null,
@@ -218,21 +233,29 @@ export function useChat(initialConversationId?: string): UseChatReturn {
         truncated: null,
         queries: null,
         answer: null,
-        status: "generating_sql",
+        sources: null,
+        status: initialStatus,
         error: null,
         created_at: new Date().toISOString(),
       };
 
       setTurns((prev) => [...prev, newTurn]);
-      setActiveStatus("generating_sql");
+      setActiveStatus(initialStatus);
 
       await streamIntoTurn(
         turnId,
-        (onEvent, signal) => chatStream(message.trim(), conversationId, onEvent, signal),
+        (onEvent, signal) => chatStream(message.trim(), conversationId, onEvent, signal, mode),
         "plan"
       );
     },
     [activeConversationId, isStreaming, stopGeneration, streamIntoTurn]
+  );
+
+  const send = useCallback(
+    async (message: string, mode: TurnKind = "sql", convId?: string) => {
+      return sendMessage(message, convId, mode);
+    },
+    [sendMessage]
   );
 
   const runTurn = useCallback(
@@ -271,7 +294,7 @@ export function useChat(initialConversationId?: string): UseChatReturn {
       if (targetTurn) {
         // Remove the failed turn and re-send its question
         setTurns((prev) => prev.filter((t) => t.id !== turnId));
-        await sendMessage(targetTurn.question, activeConversationId);
+        await sendMessage(targetTurn.question, activeConversationId, targetTurn.kind || "sql");
       }
     },
     [turns, activeConversationId, sendMessage]
@@ -283,6 +306,7 @@ export function useChat(initialConversationId?: string): UseChatReturn {
     activeConversationId,
     activeStatus,
     sendMessage,
+    send,
     runTurn,
     cancelTurn,
     stopGeneration,

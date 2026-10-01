@@ -12,6 +12,10 @@ test.describe("Chat & Approval Flow E2E", () => {
           ollama: "ok",
           model: "qwen2.5-coder:7b",
           db_version: "9.0.1",
+          knowledge_bot: {
+            configured: true,
+            reachable: true,
+          },
         }),
       });
     });
@@ -368,5 +372,84 @@ test.describe("Chat & Approval Flow E2E", () => {
 
     // No Run button should exist
     await expect(page.getByRole("button", { name: /Run query/i })).not.toBeVisible();
+  });
+
+  test("asks a docs question, displays answer and sources without approval gate", async ({ page }) => {
+    let capturedMode: string | undefined;
+
+    await page.route("**/api/chat", async (route) => {
+      if (route.request().method() === "POST") {
+        const postData = route.request().postDataJSON();
+        capturedMode = postData.mode;
+
+        const sseData = [
+          "event: status",
+          "data: searching_docs",
+          "",
+          "event: docs_answer",
+          JSON.stringify({
+            conversation_id: "conv-e2e-docs",
+            turn_id: "turn-e2e-docs-1",
+            answer: "To deploy to production, verify staging tests first.",
+            sources: [
+              {
+                id: "DOC-1",
+                source_type: "doc",
+                title: "Release Guide",
+                url: "https://example.com/guide",
+                score: 0.9,
+              },
+            ],
+            refused: false,
+          }),
+          "",
+          "event: done",
+          JSON.stringify({
+            conversation_id: "conv-e2e-docs",
+            turn_id: "turn-e2e-docs-1",
+          }),
+          "",
+        ].join("\n");
+
+        await route.fulfill({
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+          body: sseData,
+        });
+      }
+    });
+
+    await page.goto("/");
+
+    // Toggle to Docs mode
+    const docsRadio = page.getByRole("radio", { name: /^docs mode/i });
+    await docsRadio.click();
+
+    // Verify placeholder
+    const inputArea = page.getByRole("textbox", { name: /Ask a question/i });
+    await expect(inputArea).toHaveAttribute(
+      "placeholder",
+      "Ask a question about Jira, Slack, or docs..."
+    );
+
+    // Ask question
+    await inputArea.fill("How do I deploy?");
+    await inputArea.press("Enter");
+
+    // Verify answer is rendered
+    await expect(
+      page.getByText("To deploy to production, verify staging tests first.")
+    ).toBeVisible();
+
+    // Verify cited source is rendered
+    await expect(page.getByText("DOC-1")).toBeVisible();
+    await expect(page.getByText("Release Guide")).toBeVisible();
+
+    // Verify no SQL preview or Run button
+    await expect(page.getByText("Review the query before running")).not.toBeVisible();
+    await expect(page.getByRole("button", { name: /Run query/i })).not.toBeVisible();
+
+    // Verify mode sent in request was "docs"
+    expect(capturedMode).toBe("docs");
   });
 });

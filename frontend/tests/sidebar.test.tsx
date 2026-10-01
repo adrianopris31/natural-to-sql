@@ -81,4 +81,27 @@ describe("Sidebar Component", () => {
     // Should display columns of users table
     expect(screen.getByText("email")).toBeInTheDocument();
   });
+
+  it("renders distinct icons for SQL vs Docs conversations", async () => {
+    render(
+      <Providers>
+        <Sidebar
+          onNewChat={vi.fn()}
+          onSelectConversation={vi.fn()}
+        />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Top 10 users by total spend")).toBeInTheDocument();
+    });
+
+    const sqlBtn = screen.getByText("Top 10 users by total spend").closest("button");
+    const docsBtn = screen.getByText("Monthly revenue in 2025").closest("button");
+
+    expect(sqlBtn).toHaveAttribute("data-kind", "sql");
+    expect(docsBtn).toHaveAttribute("data-kind", "docs");
+    expect(screen.getByLabelText("Data conversation")).toBeInTheDocument();
+    expect(screen.getByLabelText("Docs conversation")).toBeInTheDocument();
+  });
 });

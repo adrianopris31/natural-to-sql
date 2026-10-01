@@ -217,6 +217,20 @@ Status: ✅ = done (committed on branch `feat/sql-preview-safety`), ⏳ = open. 
 - ✅ **P8.15** Frontend fix: `done` after `clarification`/`refused` no longer overwrites the status.
 - ⏳ **P8.16** Re-run evals with prompt v1.2 (includes write-intent rule); check the keyword refusal has no false positives on real questions.
 
+### Phase 9 — Knowledge-Bot Integration (Jira / Slack / Docs Q&A) (added 2026-10-01)
+Status: ✅ = done (branch `feat/knowledge-bot-integration`).
+- ✅ **P9.1** Integration client: `app/integrations/knowledge_bot.py` (`ask_docs`, `docs_health`), typed errors (`app/errors.py`), settings `KNOWLEDGE_BOT_URL`, `KNOWLEDGE_BOT_API_KEY`, `KNOWLEDGE_BOT_TIMEOUT_SEC`.
+- ✅ **P9.2** Data store: SQLite migrations in `app/store/database.py` adding `Turn.kind` (`"sql" | "docs"`) and `Turn.sources_json`.
+- ✅ **P9.3** Pipeline: `app/services/docs.py` streaming SSE events (`searching_docs`, `docs_answer`, `done`, `error`); `app/api/chat.py` accepts `mode: "sql" | "docs"` and returns HTTP 409 for `/run` and `/cancel` on docs turns.
+- ✅ **P9.4** Frontend contract & state: `lib/types.ts`, `lib/sse.ts`, `lib/api.ts`, `hooks/use-chat.ts` (docs turns stream directly to completion without approval gate).
+- ✅ **P9.5** Frontend UI: `components/chat/chat-layout.tsx` (Data / Docs segmented toggle with localStorage persistence, source filter chips for `jira:`, `slack:`, `doc:`), `docs-answer.tsx` (markdown answer, source link chips with security rels, refusal card), `sidebar.tsx` (distinct SQL/Docs icons), `status-stepper.tsx` (Searching → Answering → Completed), and non-blocking `health-banner.tsx`.
+- ✅ **P9.6** Tests: unit (`test_knowledge_bot.py`), integration (`test_docs_pipeline.py`), frontend (`docs-answer.test.tsx`, `health-banner.test.tsx`, updated `layout`, `sidebar`, `use-chat`, `api`, `e2e/chat.spec.ts`). All 314 backend + 69 frontend tests passing.
+
+### Phase 10 — External API Service & Dynamic Multi-Database (Roadmap)
+- **P10.1** Headless external API endpoint `POST /v1/query` with `X-API-Key` authentication.
+- **P10.2** Single-shot auto-execution with strict risk gating: low-risk queries auto-execute in read-only transaction; high-risk/blocked queries return structured error response.
+- **P10.3** Dynamic database connection: currently single database via `TARGET_DB_URL` in `.env`; roadmap for UI database switching and key-to-database tenant mapping.
+
 ---
 
 ## 8. Definition of done (v1)

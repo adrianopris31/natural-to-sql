@@ -41,3 +41,79 @@ class SchemaError(AppError):
     def __init__(self, message: str, user_message: str | None = None) -> None:
         friendly = user_message or f"Schema error: {message}"
         super().__init__(message=message, user_message=friendly)
+
+
+class KnowledgeBotError(AppError):
+    """Base exception for knowledge base (Jira/Slack/docs) errors."""
+
+    def __init__(self, message: str, user_message: str | None = None) -> None:
+        friendly = user_message or f"Knowledge base error: {message}"
+        super().__init__(message=message, user_message=friendly)
+
+
+class KnowledgeBotNotConfiguredError(KnowledgeBotError):
+    """Raised when knowledge-bot API key is not configured."""
+
+    def __init__(
+        self,
+        message: str = "Knowledge base is not configured",
+        user_message: str | None = None,
+    ) -> None:
+        friendly = user_message or (
+            "Documentation search is not configured. Please set KNOWLEDGE_BOT_API_KEY."
+        )
+        super().__init__(message=message, user_message=friendly)
+
+
+class KnowledgeBotUnreachableError(KnowledgeBotError):
+    """Raised when knowledge-bot service cannot be reached or times out."""
+
+    def __init__(
+        self,
+        message: str = "Knowledge base service is unreachable",
+        user_message: str | None = None,
+    ) -> None:
+        friendly = user_message or (
+            "Knowledge base service is unreachable or timed out. Please verify it is running."
+        )
+        super().__init__(message=message, user_message=friendly)
+
+
+class KnowledgeBotAuthError(KnowledgeBotError):
+    """Raised when knowledge-bot authentication (API key) fails (401/403)."""
+
+    def __init__(
+        self,
+        message: str = "Knowledge base authentication failed",
+        user_message: str | None = None,
+    ) -> None:
+        friendly = user_message or "Knowledge base authentication failed. Check your API key."
+        super().__init__(message=message, user_message=friendly)
+
+
+class KnowledgeBotQuotaError(KnowledgeBotError):
+    """Raised when knowledge-bot quota or rate limit is exceeded (429)."""
+
+    def __init__(
+        self,
+        message: str = "Knowledge base quota exceeded",
+        user_message: str | None = None,
+    ) -> None:
+        friendly = user_message or (
+            "Knowledge base quota or rate limit exceeded. Please try again later."
+        )
+        super().__init__(message=message, user_message=friendly)
+
+
+class KnowledgeBotUpstreamError(KnowledgeBotError):
+    """Raised when knowledge-bot upstream LLM service fails (502)."""
+
+    def __init__(
+        self,
+        message: str = "Knowledge base upstream provider error",
+        user_message: str | None = None,
+    ) -> None:
+        friendly = user_message or "Knowledge base upstream AI service encountered an error."
+        super().__init__(message=message, user_message=friendly)
+
+

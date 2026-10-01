@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -36,6 +37,8 @@ _MIGRATIONS: list[tuple[str, str, str]] = [
     ("audit_log", "stage", "VARCHAR(32)"),
     ("audit_log", "row_count", "INTEGER"),
     ("audit_log", "elapsed_ms", "FLOAT"),
+    ("turns", "kind", "VARCHAR(16) NOT NULL DEFAULT 'sql'"),
+    ("turns", "sources_json", "TEXT"),
 ]
 
 
@@ -130,9 +133,14 @@ async def get_conversation(conversation_id: str) -> Conversation | None:
 async def list_conversations() -> list[Conversation]:
     """List all conversations ordered by updated_at descending."""
     async with get_app_session() as session:
-        stmt = select(Conversation).order_by(Conversation.updated_at.desc())
+        stmt = (
+            select(Conversation)
+            .options(selectinload(Conversation.turns))
+            .order_by(Conversation.updated_at.desc())
+        )
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
 
 
 async def delete_conversation(conversation_id: str) -> bool:
@@ -145,12 +153,22 @@ async def delete_conversation(conversation_id: str) -> bool:
         return True
 
 
+async def touch_conversation(conversation_id: str) -> None:
+    """Update conversation updated_at timestamp to now."""
+    async with get_app_session() as session:
+        conv = await session.get(Conversation, conversation_id)
+        if conv:
+            conv.updated_at = datetime.datetime.now(datetime.UTC)
+            await session.flush()
+
+
 async def create_turn(
     conversation_id: str,
     question: str,
     status: str = "generating_sql",
     turn_id: str | None = None,
     prompt_version: str = "v1.0",
+    kind: str = "sql",
 ) -> Turn:
     """Create a new conversation turn."""
     async with get_app_session() as session:
@@ -159,12 +177,14 @@ async def create_turn(
             question=question,
             status=status,
             prompt_version=prompt_version,
+            kind=kind,
         )
         if turn_id:
             turn.id = turn_id
         session.add(turn)
         await session.flush()
         return turn
+
 
 
 async def update_turn(

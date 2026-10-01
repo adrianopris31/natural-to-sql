@@ -50,6 +50,9 @@ services:
       - DENY_TABLES=${DENY_TABLES:-migrations}
       - DENY_COLUMNS=${DENY_COLUMNS:-password,remember_token,two_factor_secret,two_factor_recovery_codes}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - KNOWLEDGE_BOT_URL=${KNOWLEDGE_BOT_URL:-http://host.docker.internal:8100}
+      - KNOWLEDGE_BOT_API_KEY=${KNOWLEDGE_BOT_API_KEY:-}
+      - KNOWLEDGE_BOT_TIMEOUT_SEC=${KNOWLEDGE_BOT_TIMEOUT_SEC:-90.0}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

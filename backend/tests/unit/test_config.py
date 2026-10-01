@@ -14,6 +14,9 @@ def test_settings_defaults() -> None:
     assert settings.HISTORY_TURNS == 4
     assert settings.SCHEMA_FULL_MAX_TABLES == 40
     assert settings.SCHEMA_SAMPLE_VALUES is True
+    assert settings.KNOWLEDGE_BOT_URL == "http://127.0.0.1:8100"
+    assert settings.KNOWLEDGE_BOT_API_KEY == ""
+    assert settings.KNOWLEDGE_BOT_TIMEOUT_SEC == 90.0
 
 
 def test_settings_password_at_symbol_sanitized() -> None:

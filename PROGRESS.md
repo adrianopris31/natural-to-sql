@@ -2,17 +2,14 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Phase 8 done; verified on Windows 10/11 development environment (different chat session): fixed Node 24 Corepack pnpm issue, ensured cross-platform forward-slash path normalization with as_posix() in config.py, verified backend & frontend test suites (all passing), and documented Windows WampServer/MySQL/HeidiSQL setup.
+Knowledge-Bot integration (Jira/Slack/Docs Q&A) complete and verified on branch `feat/knowledge-bot-integration` (314 backend tests, 69 frontend tests green). Merging to main and pushing to remote. Single database via env policy documented, with future roadmap for UI/API multi-database switching.
 
 ## NEXT
-1. **P8.8** Live check with Ollama (`ollama serve`) on `easybiz_data_1`: preview → Run / Edit / Cancel; "delete user" → Not performed; a risky query → red banner + Run anyway; SQL log panel.
-2. **P8.9/P8.16** `make eval` with prompt v1.2; accept if ≥ 85.5% (v1.0 = 87.5%).
-3. **P8.11** Tune EXPLAIN thresholds on real DB if needed.
+1. Merge `feat/knowledge-bot-integration` into `main` and push to remote.
+2. Plan headless external API service (`POST /v1/query`) and UI dynamic database selection.
 
 ## OPEN (need user input)
-- Verify `SHOW GRANTS FOR 'nl2sql_ro'@'%'` on the real DB = SELECT on `easybiz_data_1`.* only.
-- `.env`: active TARGET_DB_URL choice between local real DB :3306 or dev container :3307.
-- Any more tables to exclude via DENY_TABLES?
+- Confirm prioritization of headless external API service vs UI database selector for next milestone.
 
 ## BLOCKERS
 none
@@ -46,6 +43,8 @@ none
 - `README.md` (architecture + 13-layer model; it wrongly claimed "formula-injection sanitization", which isn't implemented, so that was removed) and `STARTUP_GUIDE.md` (§5 Using the app: preview → approve → run).
 
 ## DECISIONS
+- 2026-10-01: Target DB architecture: remain on single database configured via TARGET_DB_URL in .env for now; dynamic database switching from UI / headless external API is planned for future phase.
+- 2026-10-01: Knowledge-bot integration: Docs mode bypasses SQL validation/approval gates, streams directly to done, handles missing docs as refusal cards without erroring; health check reports non-blocking degradation if knowledge-bot is down.
 - 2026-09-30: On confirmation, UI state transitions immediately to `executing` and suppresses intermediate re-validation SSE events to prevent backward stepper regression.
 - 2026-09-30: Pass conversation history into `repair()` and `build_repair_prompt` so multi-turn context is preserved during SQL repair attempts.
 - 2026-09-29: Write requests are refused up front (keyword check + model `write_intent`), never answered with a confirmation question; risky previews are red-flagged and need an explicit "Run anyway"; every SQL event is audit-logged (DB + JSONL + UI). User request.
@@ -66,6 +65,7 @@ none
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
+- 2026-10-01: Completed Knowledge-Bot Phases 1 & 2 on branch `feat/knowledge-bot-integration`. Backend: `integrations/knowledge_bot.py`, `services/docs.py`, `app.db` auto-migrations for `kind`/`sources_json`, 314 pytest passing. Frontend: Data/Docs segmented control, source filters, `DocsAnswer` with source links & refusal view, sidebar icons, health banner, 69 Vitest passing.
 - 2026-09-30 (Windows chat session): Fixed Windows Corepack pnpm.cjs shim & installed frontend dependencies; normalized config.py paths with as_posix() for macOS/Windows parity; updated dev.ps1 pnpm fallback; documented Windows WampServer/HeidiSQL walkthrough & troubleshooting in README.md.
 - 2026-09-30: Completed P2.4 (L1-only isolation tests), history-in-repair loop, Playwright E2E suite (P8.10), and fixed post-approval state regression to "validating" (now "executing"). 293 backend + 57 frontend tests passing.
 - 2026-09-29: Claude: read-only refusal (fixes "delete user" → "Completed"), risk red flags + Run-anyway confirmation, full SQL audit log + UI panel; docs updated (see E).

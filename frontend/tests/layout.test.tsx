@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { Header } from "@/components/chat/header";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import { Providers } from "@/components/providers";
@@ -81,5 +82,96 @@ describe("ChatLayout Component", () => {
     // Sending resets the input
     await userEvent.click(sendBtn);
     expect(textarea).toHaveValue("");
+  });
+
+  it("toggles between Data and Docs mode and updates placeholder and empty state", async () => {
+    render(
+      <Providers>
+        <ChatLayout />
+      </Providers>
+    );
+
+    // Initial state is Data
+    expect(screen.getByRole("radio", { name: /data mode/i })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByPlaceholderText(/Ask a question about your database/i)).toBeInTheDocument();
+    expect(screen.getByText("Ask anything about your database")).toBeInTheDocument();
+
+    // Switch to Docs mode
+    const docsRadio = screen.getByRole("radio", { name: /^docs mode/i });
+    await userEvent.click(docsRadio);
+
+    expect(docsRadio).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByPlaceholderText(/Ask a question about Jira, Slack, or docs/i)).toBeInTheDocument();
+    expect(screen.getByText("Ask anything about your team docs")).toBeInTheDocument();
+
+    // Docs example prompt is present
+    const docsPromptBtn = screen.getByRole("button", { name: "How do we deploy to production?" });
+    expect(docsPromptBtn).toBeInTheDocument();
+    await userEvent.click(docsPromptBtn);
+    expect(screen.getByPlaceholderText(/Ask a question about Jira, Slack, or docs/i)).toHaveValue(
+      "How do we deploy to production?"
+    );
+  });
+
+  it("filters docs queries with source filter chips", async () => {
+    render(
+      <Providers>
+        <ChatLayout />
+      </Providers>
+    );
+
+    // Switch to Docs mode to reveal source chips
+    await userEvent.click(screen.getByRole("radio", { name: /^docs mode/i }));
+
+    const textarea = screen.getByPlaceholderText(/Ask a question about Jira, Slack, or docs/i);
+    expect(textarea).toHaveValue("");
+
+    // Click Jira filter
+    const jiraBtn = screen.getByRole("button", { name: "Jira" });
+    await userEvent.click(jiraBtn);
+    expect(textarea).toHaveValue("jira: ");
+    expect(jiraBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Click Slack filter
+    const slackBtn = screen.getByRole("button", { name: "Slack" });
+    await userEvent.click(slackBtn);
+    expect(textarea).toHaveValue("slack: ");
+    expect(slackBtn).toHaveAttribute("aria-pressed", "true");
+    expect(jiraBtn).toHaveAttribute("aria-pressed", "false");
+
+    // Click All filter
+    const allBtn = screen.getByRole("button", { name: "All" });
+    await userEvent.click(allBtn);
+    expect(textarea).toHaveValue("");
+    expect(allBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("disables Docs mode when knowledge-bot is unreachable", async () => {
+    server.use(
+      http.get("/api/health", () => {
+        return HttpResponse.json({
+          db: "ok",
+          ollama: "ok",
+          model: "qwen2.5-coder:7b",
+          db_version: "9.0.1",
+          knowledge_bot: {
+            configured: true,
+            reachable: false,
+          },
+        });
+      })
+    );
+
+    render(
+      <Providers>
+        <ChatLayout />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      const docsRadio = screen.getByRole("radio", { name: /docs mode/i });
+      expect(docsRadio).toBeDisabled();
+      expect(docsRadio).toHaveAttribute("title", "Knowledge Bot service is unreachable");
+    });
   });
 });

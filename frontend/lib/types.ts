@@ -3,8 +3,26 @@
  * No `any` allowed — strict typing with `unknown`.
  */
 
+export type TurnKind = "sql" | "docs";
+
+export interface DocsSource {
+  id: string;
+  source_type: string;
+  title: string;
+  url: string;
+  score: number;
+}
+
+export interface DocsAnswerPayload {
+  answer: string;
+  sources: DocsSource[];
+  refused: boolean;
+  model: string;
+}
+
 export type TurnStatus =
   | "generating_sql"
+  | "searching_docs"
   | "validating"
   | "explaining"
   | "awaiting_approval"
@@ -136,6 +154,7 @@ export type SSEEvent =
   | { type: "preview"; data: SSEPreviewData }
   | { type: "refused"; data: SSERefusedData }
   | { type: "answer_delta"; data: string }
+  | { type: "docs_answer"; data: DocsAnswerPayload }
   | { type: "done"; data: SSEDoneData }
   | { type: "clarification"; data: SSEClarificationData }
   | { type: "error"; data: SSEErrorData };
@@ -143,6 +162,7 @@ export type SSEEvent =
 export interface ChatRequest {
   conversation_id?: string;
   message: string;
+  mode?: TurnKind;
 }
 
 /** Approve a previewed turn; `queries[i]` optionally replaces query i's SQL. */
@@ -154,10 +174,12 @@ export interface ConversationSummary {
   id: string;
   title: string;
   updated_at: string;
+  last_kind?: TurnKind;
 }
 
 export interface Turn {
   id: string;
+  kind?: TurnKind;
   question: string;
   sql: string | null;
   columns: string[] | null;
@@ -167,6 +189,7 @@ export interface Turn {
   /** Present for turns created with the preview/approval flow. */
   queries?: TurnQuery[] | null;
   answer: string | null;
+  sources?: DocsSource[] | null;
   status: TurnStatus;
   error: string | null;
   created_at: string;
@@ -206,9 +229,16 @@ export interface SchemaRefreshResponse {
   tables: number;
 }
 
+export interface KnowledgeBotHealth {
+  configured: boolean;
+  reachable: boolean;
+}
+
 export interface HealthResponse {
   db: "ok" | "error";
   ollama: "ok" | "error";
   model: string;
   db_version: string;
+  knowledge_bot?: KnowledgeBotHealth;
 }
+

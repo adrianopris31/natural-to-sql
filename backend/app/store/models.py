@@ -55,9 +55,11 @@ class Turn(Base):
         index=True,
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="sql")
     sql: Mapped[str | None] = mapped_column(Text, nullable=True)
     columns_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     rows_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Per-query state: [{index, purpose, sql, explain, columns, rows, row_count, truncated, error}]
     queries_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

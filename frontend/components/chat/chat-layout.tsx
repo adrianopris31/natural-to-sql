@@ -1,22 +1,75 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { fetchConversation } from "@/lib/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchConversation, fetchHealth } from "@/lib/api";
 import { useChat } from "@/hooks/use-chat";
+import { TurnKind } from "@/lib/types";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { HealthBanner } from "./health-banner";
 import { UserMessage } from "./user-message";
 import { AssistantTurn } from "./assistant-turn";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Database, FileText, Sparkles, Square } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const SOURCE_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "jira", label: "Jira" },
+  { id: "slack", label: "Slack" },
+  { id: "doc", label: "Docs" },
+] as const;
+
+type SourceFilterId = (typeof SOURCE_FILTERS)[number]["id"];
 
 export function ChatLayout() {
   const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [mode, setModeState] = useState<TurnKind>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("chat_mode");
+        if (saved === "sql" || saved === "docs") return saved;
+      } catch {
+        // Ignore localStorage access errors
+      }
+    }
+    return "sql";
+  });
+
+  const setMode = (newMode: TurnKind) => {
+    setModeState(newMode);
+    try {
+      localStorage.setItem("chat_mode", newMode);
+    } catch {
+      // Ignore localStorage access errors
+    }
+  };
+
+  const { data: health } = useQuery({
+    queryKey: ["health"],
+    queryFn: fetchHealth,
+    refetchInterval: 30000,
+  });
+
+  const kbConfigured = health?.knowledge_bot?.configured ?? false;
+  const kbReachable = health?.knowledge_bot?.reachable ?? false;
+  const docsDisabled = !kbConfigured || !kbReachable;
+  const docsDisabledReason = !kbConfigured
+    ? "Knowledge Bot is not configured"
+    : !kbReachable
+    ? "Knowledge Bot service is unreachable"
+    : "";
+
+  useEffect(() => {
+    if (docsDisabled && mode === "docs") {
+      setMode("sql");
+    }
+  }, [docsDisabled, mode]);
 
   const {
     turns,
@@ -48,6 +101,12 @@ export function ChatLayout() {
     try {
       const detail = await fetchConversation(id);
       loadConversation(detail);
+      const lastTurn = detail.turns[detail.turns.length - 1];
+      if (lastTurn?.kind === "docs" && !docsDisabled) {
+        setMode("docs");
+      } else if (lastTurn?.kind === "sql") {
+        setMode("sql");
+      }
     } catch {
       // In case fetch fails, keep current state
     }
@@ -57,7 +116,7 @@ export function ChatLayout() {
     if (!inputMessage.trim() || isStreaming) return;
     const msg = inputMessage.trim();
     setInputMessage("");
-    await sendMessage(msg);
+    await sendMessage(msg, undefined, mode);
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
 
@@ -68,11 +127,36 @@ export function ChatLayout() {
     }
   };
 
+  const getActiveSourceFilter = (msg: string): SourceFilterId => {
+    const trimmed = msg.trimStart().toLowerCase();
+    if (trimmed.startsWith("jira:")) return "jira";
+    if (trimmed.startsWith("slack:")) return "slack";
+    if (trimmed.startsWith("doc:")) return "doc";
+    return "all";
+  };
+
+  const currentSourceFilter = getActiveSourceFilter(inputMessage);
+
+  const handleSourceFilterClick = (filterId: SourceFilterId) => {
+    setInputMessage((prev) => {
+      const stripped = prev.replace(/^\s*(jira|slack|doc):\s*/i, "");
+      if (filterId === "all") return stripped;
+      return `${filterId}: ${stripped}`;
+    });
+  };
+
   const examplePrompts = [
     "Top 10 users by total spend",
     "Monthly revenue in 2025",
     "Which products have never been ordered?",
     "List all orders created this week",
+  ];
+
+  const docsExamplePrompts = [
+    "How do we deploy to production?",
+    "What is the status of the auth migration?",
+    "jira: open high priority bugs",
+    "slack: discussions about database timeout",
   ];
 
   return (
@@ -132,16 +216,17 @@ export function ChatLayout() {
                   <Sparkles className="size-6" />
                 </div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                  Ask anything about your database
+                  {mode === "docs" ? "Ask anything about your team docs" : "Ask anything about your database"}
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground max-w-md">
-                  Natural language is converted to validated, read-only SQL, executed,
-                  and summarized with verified data.
+                  {mode === "docs"
+                    ? "Search across Jira tickets, Slack discussions, and team runbooks to find answers with verified sources."
+                    : "Natural language is converted to validated, read-only SQL, executed, and summarized with verified data."}
                 </p>
 
                 {/* Example Questions */}
                 <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-lg">
-                  {examplePrompts.map((prompt) => (
+                  {(mode === "docs" ? docsExamplePrompts : examplePrompts).map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
@@ -182,17 +267,93 @@ export function ChatLayout() {
 
         {/* Input Bar Area */}
         <div className="border-t border-border bg-background p-4">
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-3xl space-y-2">
+            {/* Mode Toggle & Source Filter bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              {/* Segmented Control */}
+              <div
+                role="radiogroup"
+                aria-label="Query mode"
+                className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === "sql"}
+                  onClick={() => setMode("sql")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    mode === "sql"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "hover:text-foreground"
+                  )}
+                  aria-label="Data mode"
+                >
+                  <Database className="size-3.5" />
+                  <span>Data</span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === "docs"}
+                  onClick={() => !docsDisabled && setMode("docs")}
+                  disabled={docsDisabled}
+                  title={docsDisabledReason || undefined}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    mode === "docs"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "hover:text-foreground",
+                    docsDisabled && "opacity-50 cursor-not-allowed hover:text-muted-foreground"
+                  )}
+                  aria-label={docsDisabled ? `Docs mode (${docsDisabledReason})` : "Docs mode"}
+                >
+                  <FileText className="size-3.5" />
+                  <span>Docs</span>
+                </button>
+              </div>
+
+              {/* Source filters (visible in docs mode) */}
+              {mode === "docs" && (
+                <div className="flex items-center gap-1 text-xs" role="group" aria-label="Source filters">
+                  <span className="text-[11px] text-muted-foreground mr-1 hidden sm:inline">Source:</span>
+                  {SOURCE_FILTERS.map((f) => {
+                    const active = currentSourceFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => handleSourceFilterClick(f.id)}
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors border",
+                          active
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border/60 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        )}
+                        aria-pressed={active}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div className="relative rounded-xl border border-input bg-card shadow-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
               <textarea
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask a question about your database (e.g. top customers by spend)..."
+                placeholder={
+                  mode === "docs"
+                    ? "Ask a question about Jira, Slack, or docs..."
+                    : "Ask a question about your database (e.g. top customers by spend)..."
+                }
                 rows={2}
                 disabled={isStreaming}
                 className="w-full resize-none bg-transparent px-3.5 py-3 text-sm placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
-                aria-label="Ask a question"
+                aria-label={mode === "docs" ? "Ask a question about documentation" : "Ask a question"}
               />
 
               <div className="flex items-center justify-between px-3 py-2 border-t border-border/40">
