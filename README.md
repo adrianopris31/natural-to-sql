@@ -143,6 +143,8 @@ A single command spins up the sample e-commerce MySQL database (port 3307), runs
 ```bash
 make dev
 ```
+*(Or without Docker / connecting to your own database: run `cd backend && uv sync && uv run uvicorn app.main:app --reload --port 8000` in one terminal, and `cd frontend && pnpm install && pnpm dev` in a second terminal).*
+
 Open **[http://localhost:3000](http://localhost:3000)** in your browser!
 
 ---
@@ -213,25 +215,48 @@ Open `.env` in an editor and update `TARGET_DB_URL` to match your local Windows 
 TARGET_DB_URL=mysql+asyncmy://nl2sql_ro:nl2sql_ro_pass@127.0.0.1:3306/ecommerce
 ```
 
-Initialize the Python 3.12 environment and dependencies:
+Initialize the Backend and Frontend dependencies:
 ```powershell
+# 1. Initialize Backend (Python 3.12 via uv):
 cd backend
 uv python install 3.12
 uv sync
 cd ..
+
+# 2. Initialize Frontend (using pnpm):
+cd frontend
+pnpm install
+cd ..
 ```
+
+> [!IMPORTANT]
+> **Use `pnpm install`, NOT `npm install`**: The repository tracks dependencies via `pnpm-lock.yaml`. Running `npm install` creates conflicting lockfiles and can cause React 19 peer-dependency issues. Always use `pnpm` for frontend package management (`npm install -g pnpm` is only used once to install the CLI).
 
 ---
 
-### 4. Start Application (Single Command)
+### 4. Start Application
 
-Make sure Ollama is running (`ollama serve`), then run the 1-command Windows launcher:
+Make sure Ollama is running (`ollama serve`), then start the app using either method:
+
+#### Option A: Single Command Launcher (Recommended)
+In PowerShell:
 ```powershell
 .\dev.ps1
 ```
 *(Alternatively, you can double-click `dev.bat` in Windows File Explorer).*
+This automatically launches both the FastAPI backend (`http://127.0.0.1:8000`) and Next.js frontend (`http://localhost:3000`) concurrently in separate console windows.
 
-This launches both the FastAPI backend (`http://127.0.0.1:8000`) and Next.js frontend (`http://localhost:3000`) concurrently in separate console windows.
+#### Option B: Manual Launch (Two Terminals)
+- **Terminal 1 (Backend)**:
+  ```powershell
+  cd backend
+  uv run uvicorn app.main:app --reload --port 8000
+  ```
+- **Terminal 2 (Frontend)**:
+  ```powershell
+  cd frontend
+  pnpm dev
+  ```
 
 Open **[http://localhost:3000](http://localhost:3000)** in your browser!
 
