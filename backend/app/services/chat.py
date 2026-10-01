@@ -237,6 +237,9 @@ async def _prepare_query(
         current_sql = repaired.sql or ""
 
 
+prepare_query = _prepare_query
+
+
 def _has_outer_limit(sql: str) -> bool:
     try:
         return sqlglot.parse_one(sql, read="mysql").args.get("limit") is not None

@@ -82,4 +82,3 @@ async def test_health_check_knowledge_bot_unreachable_does_not_fail() -> None:
         "db_version": "9.0.1",
         "knowledge_bot": {"configured": True, "reachable": False},
     }
-

@@ -226,10 +226,23 @@ Status: ✅ = done (branch `feat/knowledge-bot-integration`).
 - ✅ **P9.5** Frontend UI: `components/chat/chat-layout.tsx` (Data / Docs segmented toggle with localStorage persistence, source filter chips for `jira:`, `slack:`, `doc:`), `docs-answer.tsx` (markdown answer, source link chips with security rels, refusal card), `sidebar.tsx` (distinct SQL/Docs icons), `status-stepper.tsx` (Searching → Answering → Completed), and non-blocking `health-banner.tsx`.
 - ✅ **P9.6** Tests: unit (`test_knowledge_bot.py`), integration (`test_docs_pipeline.py`), frontend (`docs-answer.test.tsx`, `health-banner.test.tsx`, updated `layout`, `sidebar`, `use-chat`, `api`, `e2e/chat.spec.ts`). All 314 backend + 69 frontend tests passing.
 
-### Phase 10 — External API Service & Dynamic Multi-Database (Roadmap)
-- **P10.1** Headless external API endpoint `POST /v1/query` with `X-API-Key` authentication.
-- **P10.2** Single-shot auto-execution with strict risk gating: low-risk queries auto-execute in read-only transaction; high-risk/blocked queries return structured error response.
-- **P10.3** Dynamic database connection: currently single database via `TARGET_DB_URL` in `.env`; roadmap for UI database switching and key-to-database tenant mapping.
+### Phase 10 — External API Service & Headless Querying (added 2026-10-01)
+Status: ✅ = done (branch `feat/external-api-service`).
+- ✅ **P10.1** API Key authentication & storage: `api_keys` and `api_usage` models in SQLite (`app.db`), SHA-256 key hashing (`nl_live_...`), scopes (`query`, `admin`), in-memory sliding-window rate limiting (60 req/min), and daily quota tracking in `app/core/auth.py`.
+- ✅ **P10.2** Headless query service: `app/services/query.py` (`execute_headless_query`, `approve_headless_query`, `cancel_headless_query`) with unified `mode: "sql"` and `mode: "docs"`.
+- ✅ **P10.3** Automated safety risk gate: low-risk queries auto-execute in `START TRANSACTION READ ONLY` with statement timeout and row cap; high-risk (Cartesian joins, draft blocked) or EXPLAIN-blocked queries refuse auto-run and return `status="blocked"` for two-phase approval; upfront write-intent checks refuse modifications.
+- ✅ **P10.4** External REST endpoints: mounted under `/v1` in `app/api/v1/query.py` and `app/api/v1/keys.py`:
+  - `POST /v1/query`: single-shot headless execution (sql or docs)
+  - `POST /v1/query/{turn_id}/approve`: two-phase approval for blocked or inspected queries
+  - `POST /v1/query/{turn_id}/cancel`: discard turns awaiting approval
+  - `GET /v1/health`: public status and DB connectivity check
+  - `POST /v1/keys`: issue new API key with scope and quota (admin)
+  - `GET /v1/keys`: list keys with prefix and metadata (admin)
+  - `DELETE /v1/keys/{prefix}`: revoke API key (admin)
+  - `GET /v1/audit`: query SQL lifecycle audit log (admin)
+- ✅ **P10.5** CLI management tool: `scripts/manage_keys.py` (`new`, `list`, `revoke`).
+- ✅ **P10.6** Test suite: unit (`tests/unit/test_api_auth.py`), integration (`tests/integration/test_v1_api.py`), bringing backend tests to 332 with 100% pass rate.
+- ⏳ **P10.7 (Roadmap)** Dynamic multi-database connection: currently single database via `TARGET_DB_URL` in `.env`; future roadmap for UI database switching and key-to-database tenant mapping.
 
 ---
 

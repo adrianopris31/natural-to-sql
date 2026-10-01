@@ -6,7 +6,7 @@
 [![MySQL 9.0](https://img.shields.io/badge/MySQL-9.0-4479A1.svg?style=flat&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Ollama](https://img.shields.io/badge/Ollama-qwen2.5--coder:7b-black.svg)](https://ollama.com/)
 [![Security Suite](https://img.shields.io/badge/security%20corpus-100%25%20rejected-success.svg)](backend/tests/security/)
-[![Tests](https://img.shields.io/badge/tests-343%20passed-brightgreen.svg)](#testing--verification)
+[![Tests](https://img.shields.io/badge/tests-401%20passed-brightgreen.svg)](#testing--verification)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-grade, local-first **Natural Language to SQL** analytics assistant. Ask questions about your business data in plain English and receive safe, validated MySQL queries, detailed query execution plans, interactive data tables, and grounded conversational answers—**with zero cloud data leakage**.
@@ -21,6 +21,7 @@ Built for **MySQL 9.0 / 8.0+**, powered by native **Ollama (`qwen2.5-coder:7b`)*
 - [Architecture & Data Pipeline](#-architecture--data-pipeline)
 - [14-Layer Defense-in-Depth Security Matrix](#-14-layer-defense-in-depth-security-matrix)
 - [Knowledge-Bot Integration (Jira / Slack / Docs Q&A)](#-knowledge-bot-integration-jira--slack--docs-qa)
+- [Headless External REST API & Key Management (/v1)](#-headless-external-rest-api--key-management-v1)
 - [Prerequisites](#-prerequisites)
 - [Quickstart (Local Native Mac / Linux)](#-quickstart-local-native-mac--linux)
 - [Quickstart (Native Windows Setup)](#-quickstart-native-windows-setup-no-wsl-no-docker-required)
@@ -163,6 +164,176 @@ KNOWLEDGE_BOT_TIMEOUT_SEC=90.0
 ```
 
 ---
+
+## 🔌 Headless External REST API & Key Management (/v1)
+
+Natural-to-SQL provides a production-ready headless REST API mounted under `/v1/`, allowing external automation tools, Slack/Discord bots, CI/CD pipelines, and microservices to run queries programmatically.
+
+### Architecture & Security Policies
+- **Database Scope**: The API queries the single target database configured via `TARGET_DB_URL` in `.env`. Connection strings are **never accepted in API requests** to prevent SSRF and credential leaks. *(Dynamic database switching via UI and multi-tenant key mapping is planned on the future roadmap).*
+- **Authentication**: Secured via `X-API-Key: nl_live_...` or standard `Authorization: Bearer nl_live_...`.
+- **Zero Plaintext Storage**: Keys are hashed with SHA-256 before storage in SQLite (`app.db`).
+- **Scopes**:
+  - `query`: Access to `/v1/query`, `/v1/query/{turn_id}/approve`, `/v1/query/{turn_id}/cancel`, and `/v1/health`.
+  - `admin`: Key provisioning (`POST/GET/DELETE /v1/keys`) and audit log inspection (`GET /v1/audit`).
+- **Rate Limiting & Quotas**:
+  - In-memory sliding-window rate limiter: **60 requests per minute** per key (returns HTTP 429 when exceeded).
+  - Configurable daily quotas: tracked per UTC calendar day (returns HTTP 429 when exceeded; `0` = unlimited).
+- **Automated Risk Gating (`auto_approve: true`)**:
+  - **Safe queries** (no EXPLAIN block, low/medium risk) execute immediately in `START TRANSACTION READ ONLY` and return grounded natural-language answers and data tables.
+  - **High-risk queries** (Cartesian joins, draft blocked) or **EXPLAIN-blocked queries** halt execution and return `status="blocked"`, `blocked: true` with a preview. Callers can inspect the proposed query and explicitly approve it via `POST /v1/query/{turn_id}/approve`.
+  - **Destructive requests** (`DROP`, `DELETE`, `UPDATE`) are refused up front with `status="refused"`, `blocked: true`.
+
+---
+
+### Managing API Keys via CLI
+
+Use [`scripts/manage_keys.py`](scripts/manage_keys.py) for terminal key lifecycle management:
+
+```bash
+# Issue a query key with a daily quota of 1,000 requests
+uv run python scripts/manage_keys.py new "Slack Bot" --scope query --quota 1000
+
+# Issue an admin key
+uv run python scripts/manage_keys.py new "Admin CI" --scope admin
+
+# List active keys (shows prefix, label, scope, quota, last used)
+uv run python scripts/manage_keys.py list
+
+# List all keys including revoked ones
+uv run python scripts/manage_keys.py list --all
+
+# Revoke an API key by its hash prefix (at least 8 characters)
+uv run python scripts/manage_keys.py revoke da37658e346b
+```
+
+---
+
+### API Endpoints Reference
+
+| Method | Endpoint | Scope | Description |
+|---|---|---|---|
+| `POST` | `/v1/query` | `query` | Single-shot headless query execution (`sql` or `docs`). |
+| `POST` | `/v1/query/{turn_id}/approve` | `query` | Execute an approved turn after preview or edits. |
+| `POST` | `/v1/query/{turn_id}/cancel` | `query` | Discard a blocked or previewed turn. |
+| `GET` | `/v1/health` | *Public* | Health status of backend and target MySQL connection. |
+| `POST` | `/v1/keys` | `admin` | Create a new API key (returns plaintext secret once). |
+| `GET` | `/v1/keys` | `admin` | List registered API keys with metadata (no secrets). |
+| `DELETE` | `/v1/keys/{prefix}` | `admin` | Revoke an active API key by prefix. |
+| `GET` | `/v1/audit` | `admin` | Query recent SQL lifecycle audit log entries. |
+
+---
+
+### cURL Examples
+
+#### 1. Execute Natural-to-SQL Query (Auto-Approve Safe Queries)
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H "X-API-Key: nl_live_YOUR_KEY_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What are our top 5 products by revenue?",
+    "mode": "sql",
+    "auto_approve": true
+  }'
+```
+
+**Response (Safe Query - Status Done):**
+```json
+{
+  "turn_id": "c1f7a308-410a-4ff1-a20c-b26a63d9154a",
+  "conversation_id": "90e909a3-5c54-47be-9e7f-bd02a3a5f782",
+  "mode": "sql",
+  "status": "done",
+  "answer": "The top product by revenue is iPhone 15 Pro ($45,000)...",
+  "queries": [
+    {
+      "index": 0,
+      "purpose": "Find top products by revenue",
+      "sql": "SELECT p.name, SUM(oi.price * oi.quantity) AS total_revenue FROM products p JOIN order_items oi ON p.id = oi.product_id GROUP BY p.id ORDER BY total_revenue DESC LIMIT 5",
+      "columns": ["name", "total_revenue"],
+      "rows": [["iPhone 15 Pro", 45000], ["MacBook Pro 16", 32000]],
+      "row_count": 2,
+      "truncated": false
+    }
+  ],
+  "timings": { "execution_ms": 4.12, "answer_ms": 420.5 }
+}
+```
+
+#### 2. Query Requiring Approval (High Risk or Auto-Approve Disabled)
+If a query produces a Cartesian join or `auto_approve` is set to `false`:
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H "X-API-Key: nl_live_YOUR_KEY_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "Calculate customer metrics",
+    "auto_approve": false
+  }'
+```
+
+**Response (Awaiting Approval):**
+```json
+{
+  "turn_id": "b3e811f0-08c3-4f9e-a6c3-1ef96c68a4bb",
+  "conversation_id": "90e909a3-5c54-47be-9e7f-bd02a3a5f782",
+  "mode": "sql",
+  "status": "awaiting_approval",
+  "blocked": false,
+  "queries": [
+    {
+      "index": 0,
+      "sql": "SELECT u.id, COUNT(o.id) AS orders_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id",
+      "explain": { "cost": 12.5, "rows": 150, "blocked": false },
+      "risk": { "level": "none", "flags": [] }
+    }
+  ]
+}
+```
+
+**Approve and Execute the Turn:**
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query/b3e811f0-08c3-4f9e-a6c3-1ef96c68a4bb/approve \
+  -H "X-API-Key: nl_live_YOUR_KEY_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"queries": null}'
+```
+
+#### 3. Execute Documentation Query (Docs Mode)
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H "X-API-Key: nl_live_YOUR_KEY_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is the SLA for P1 production incidents?",
+    "mode": "docs"
+  }'
+```
+
+**Response (Docs Mode):**
+```json
+{
+  "turn_id": "f5d93e11-e408-410a-a03d-82d22b6219ff",
+  "conversation_id": "90e909a3-5c54-47be-9e7f-bd02a3a5f782",
+  "mode": "docs",
+  "status": "done",
+  "answer": "P1 production incidents require an initial response within 15 minutes...",
+  "sources": [
+    {
+      "id": "runbook-incident-mgmt",
+      "title": "Incident Management Runbook",
+      "url": "https://wiki.example.com/incident-management",
+      "source_type": "doc",
+      "score": 0.94
+    }
+  ],
+  "queries": []
+}
+```
+
+---
+
 
 ## 📋 Prerequisites
 

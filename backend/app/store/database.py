@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.store.models import AuditLog, Base, Conversation, Turn
+from app.store.models import ApiKey, ApiUsage, AuditLog, Base, Conversation, Turn
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -142,7 +142,6 @@ async def list_conversations() -> list[Conversation]:
         return list(result.scalars().all())
 
 
-
 async def delete_conversation(conversation_id: str) -> bool:
     """Delete a conversation and all its associated turns."""
     async with get_app_session() as session:
@@ -184,7 +183,6 @@ async def create_turn(
         session.add(turn)
         await session.flush()
         return turn
-
 
 
 async def update_turn(
@@ -312,3 +310,108 @@ async def list_audit_entries(limit: int = 200, turn_id: str | None = None) -> li
             }
             for log, question, conversation_id in rows
         ]
+
+
+# --- API Key & Quota Repositories ---
+
+
+async def save_api_key(
+    key_hash: str,
+    label: str,
+    scope: str = "query",
+    daily_quota: int = 0,
+) -> ApiKey:
+    """Store a newly generated API key record."""
+    async with get_app_session() as session:
+        api_key = ApiKey(
+            key_hash=key_hash,
+            label=label,
+            scope=scope,
+            daily_quota=daily_quota,
+        )
+        session.add(api_key)
+        await session.flush()
+        return api_key
+
+
+async def find_api_key(key_hash: str, include_revoked: bool = False) -> ApiKey | None:
+    """Fetch API key by its SHA-256 hash."""
+    async with get_app_session() as session:
+        stmt = select(ApiKey).where(ApiKey.key_hash == key_hash)
+        if not include_revoked:
+            stmt = stmt.where(ApiKey.revoked_at.is_(None))
+        return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def revoke_api_key(key_hash_prefix: str) -> bool:
+    """Revoke an API key matching hash or prefix. Returns True if revoked, False if not found."""
+    async with get_app_session() as session:
+        stmt = (
+            select(ApiKey)
+            .where(ApiKey.key_hash.startswith(key_hash_prefix))
+            .where(ApiKey.revoked_at.is_(None))
+        )
+        key = (await session.execute(stmt)).scalar_one_or_none()
+        if not key:
+            return False
+        key.revoked_at = datetime.datetime.now(datetime.UTC)
+        await session.flush()
+        return True
+
+
+async def list_api_keys(include_revoked: bool = False) -> list[dict[str, Any]]:
+    """List API keys with metadata (excluding the full key hash)."""
+    async with get_app_session() as session:
+        stmt = select(ApiKey).order_by(ApiKey.created_at.desc())
+        if not include_revoked:
+            stmt = stmt.where(ApiKey.revoked_at.is_(None))
+        keys = (await session.execute(stmt)).scalars().all()
+        return [
+            {
+                "key_hash_prefix": key.key_hash[:12],
+                "label": key.label,
+                "scope": key.scope,
+                "daily_quota": key.daily_quota,
+                "created_at": key.created_at.isoformat(),
+                "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+                "revoked": key.revoked_at is not None,
+                "revoked_at": key.revoked_at.isoformat() if key.revoked_at else None,
+            }
+            for key in keys
+        ]
+
+
+async def record_api_usage(key_hash: str) -> None:
+    """Record one API request for today's quota tracking and update last_used_at."""
+    today = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    now = datetime.datetime.now(datetime.UTC)
+    async with get_app_session() as session:
+        key = await session.get(ApiKey, key_hash)
+        if key:
+            key.last_used_at = now
+
+        stmt = (
+            select(ApiUsage)
+            .where(ApiUsage.key_hash == key_hash)
+            .where(ApiUsage.usage_date == today)
+        )
+        usage = (await session.execute(stmt)).scalar_one_or_none()
+        if usage:
+            usage.request_count += 1
+        else:
+            usage = ApiUsage(key_hash=key_hash, usage_date=today, request_count=1)
+            session.add(usage)
+        await session.flush()
+
+
+async def get_api_usage_today(key_hash: str) -> int:
+    """Get the number of API requests recorded today for an API key."""
+    today = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    async with get_app_session() as session:
+        stmt = (
+            select(ApiUsage.request_count)
+            .where(ApiUsage.key_hash == key_hash)
+            .where(ApiUsage.usage_date == today)
+        )
+        result = (await session.execute(stmt)).scalar_one_or_none()
+        return result or 0

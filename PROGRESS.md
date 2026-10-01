@@ -2,14 +2,15 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Knowledge-Bot integration (Jira/Slack/Docs Q&A) complete and verified on branch `feat/knowledge-bot-integration` (314 backend tests, 69 frontend tests green). Merging to main and pushing to remote. Single database via env policy documented, with future roadmap for UI/API multi-database switching.
+Phase 10 (Headless External API Service) complete on branch `feat/external-api-service`. All 332 backend tests and 69 frontend tests passing with 0 lint or type errors. Implemented API key authentication, rate limiting, daily quotas, headless query execution (`POST /v1/query`) with automated risk gating, two-phase approval (`POST /v1/query/{turn_id}/approve`), cancellation, and CLI key management (`scripts/manage_keys.py`).
 
 ## NEXT
-1. Merge `feat/knowledge-bot-integration` into `main` and push to remote.
-2. Plan headless external API service (`POST /v1/query`) and UI dynamic database selection.
+1. Merge branch `feat/external-api-service` into `main` and push to remote.
+2. Update documentation (`README.md`, `PLAN.md`) with /v1 external API specs and examples.
+3. Design dynamic database connection UI selector for future milestone.
 
 ## OPEN (need user input)
-- Confirm prioritization of headless external API service vs UI database selector for next milestone.
+- Confirm if any specific external integration (e.g. Slack webhook, GitHub Action) is planned for the /v1 API.
 
 ## BLOCKERS
 none
@@ -43,6 +44,7 @@ none
 - `README.md` (architecture + 13-layer model; it wrongly claimed "formula-injection sanitization", which isn't implemented, so that was removed) and `STARTUP_GUIDE.md` (§5 Using the app: preview → approve → run).
 
 ## DECISIONS
+- 2026-10-01: Phase 10 External API: SHA-256 hashed API keys (`nl_live_`), scopes (`query`, `admin`), in-memory sliding window rate limiter (60 req/min), daily quota tracking, auto-approve risk gate (safe queries execute immediately in RO transaction; high-risk/Cartesian/blocked queries require explicit approval via /approve), CLI manage_keys.py tool.
 - 2026-10-01: Target DB architecture: remain on single database configured via TARGET_DB_URL in .env for now; dynamic database switching from UI / headless external API is planned for future phase.
 - 2026-10-01: Knowledge-bot integration: Docs mode bypasses SQL validation/approval gates, streams directly to done, handles missing docs as refusal cards without erroring; health check reports non-blocking degradation if knowledge-bot is down.
 - 2026-09-30: On confirmation, UI state transitions immediately to `executing` and suppresses intermediate re-validation SSE events to prevent backward stepper regression.
@@ -65,6 +67,7 @@ none
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
+- 2026-10-01: Phase 10 complete on branch `feat/external-api-service`. Implemented `/v1/query`, `/v1/query/{turn_id}/approve`, `/v1/query/{turn_id}/cancel`, `/v1/keys`, `/v1/audit`, `/v1/health`. Added API key auth, rate limiting, daily quota tracking, auto-approve risk gate, and CLI `scripts/manage_keys.py`. 332 backend tests and 69 frontend tests passing.
 - 2026-10-01: Completed Knowledge-Bot Phases 1 & 2 on branch `feat/knowledge-bot-integration`. Backend: `integrations/knowledge_bot.py`, `services/docs.py`, `app.db` auto-migrations for `kind`/`sources_json`, 314 pytest passing. Frontend: Data/Docs segmented control, source filters, `DocsAnswer` with source links & refusal view, sidebar icons, health banner, 69 Vitest passing.
 - 2026-09-30 (Windows chat session): Fixed Windows Corepack pnpm.cjs shim & installed frontend dependencies; normalized config.py paths with as_posix() for macOS/Windows parity; updated dev.ps1 pnpm fallback; documented Windows WampServer/HeidiSQL walkthrough & troubleshooting in README.md.
 - 2026-09-30: Completed P2.4 (L1-only isolation tests), history-in-repair loop, Playwright E2E suite (P8.10), and fixed post-approval state regression to "validating" (now "executing"). 293 backend + 57 frontend tests passing.

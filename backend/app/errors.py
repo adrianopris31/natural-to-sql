@@ -115,5 +115,3 @@ class KnowledgeBotUpstreamError(KnowledgeBotError):
     ) -> None:
         friendly = user_message or "Knowledge base upstream AI service encountered an error."
         super().__init__(message=message, user_message=friendly)
-
-

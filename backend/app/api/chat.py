@@ -25,7 +25,6 @@ class ChatRequest(BaseModel):
     mode: Literal["sql", "docs"] = "sql"
 
 
-
 class RunRequest(BaseModel):
     """Approve a previewed turn. `queries[i]` optionally replaces query i's SQL."""
 
@@ -123,4 +122,3 @@ async def cancel_turn_endpoint(turn_id: str) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="Turn not found or not awaiting approval",
         )
-

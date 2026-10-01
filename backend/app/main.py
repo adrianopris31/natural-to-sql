@@ -13,6 +13,8 @@ from app.api.audit import router as audit_router
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.schema import router as schema_router
+from app.api.v1.keys import router as v1_keys_router
+from app.api.v1.query import router as v1_query_router
 from app.config import get_settings
 from app.core.db import check_db_health, close_engine
 from app.core.schema import get_schema_cache
@@ -93,6 +95,8 @@ app.include_router(chat_router)
 app.include_router(conversations_router)
 app.include_router(schema_router)
 app.include_router(audit_router)
+app.include_router(v1_query_router)
+app.include_router(v1_keys_router)
 
 
 class KnowledgeBotHealth(BaseModel):
@@ -129,4 +133,3 @@ async def health() -> HealthResponse:
             reachable=kb_health["reachable"],
         ),
     )
-
