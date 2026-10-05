@@ -2,15 +2,16 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Phase 10 (Headless External API Service) complete on branch `feat/external-api-service`. All 332 backend tests and 69 frontend tests passing with 0 lint or type errors. Implemented API key authentication, rate limiting, daily quotas, headless query execution (`POST /v1/query`) with automated risk gating, two-phase approval (`POST /v1/query/{turn_id}/approve`), cancellation, and CLI key management (`scripts/manage_keys.py`).
+Phase 10 (Headless External API Service & Key Management) is 100% completed, verified, and merged into `main` (`ae0cdc9`). All 332 backend tests and 69 frontend tests pass with zero lint or type errors.
 
 ## NEXT
-1. Merge branch `feat/external-api-service` into `main` and push to remote.
-2. Update documentation (`README.md`, `PLAN.md`) with /v1 external API specs and examples.
-3. Design dynamic database connection UI selector for future milestone.
+Options for next milestone:
+1. **Dynamic Database Switching**: Allow users to switch databases from the UI (or assign databases per API key tenant), moving beyond single `.env` `TARGET_DB_URL`.
+2. **Phase 8 follow-ups / Evals**: Re-run eval benchmark (`make eval`) on real schema, live checks with Ollama.
+3. **Knowledge-Bot Phase 3**: Jira/Slack credentials configuration UI (modal/settings page in frontend) once KB-2 admin routes are ready.
 
 ## OPEN (need user input)
-- Confirm if any specific external integration (e.g. Slack webhook, GitHub Action) is planned for the /v1 API.
+- Which next direction would you like to prioritize? (Dynamic DB switching, KB-2 settings UI, or evals/live tuning?)
 
 ## BLOCKERS
 none
