@@ -46,9 +46,15 @@ class SchemaError(AppError):
 class KnowledgeBotError(AppError):
     """Base exception for knowledge base (Jira/Slack/docs) errors."""
 
-    def __init__(self, message: str, user_message: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        user_message: str | None = None,
+        status_code: int = 502,
+    ) -> None:
         friendly = user_message or f"Knowledge base error: {message}"
         super().__init__(message=message, user_message=friendly)
+        self.status_code = status_code
 
 
 class KnowledgeBotNotConfiguredError(KnowledgeBotError):
@@ -58,11 +64,12 @@ class KnowledgeBotNotConfiguredError(KnowledgeBotError):
         self,
         message: str = "Knowledge base is not configured",
         user_message: str | None = None,
+        status_code: int = 503,
     ) -> None:
         friendly = user_message or (
             "Documentation search is not configured. Please set KNOWLEDGE_BOT_API_KEY."
         )
-        super().__init__(message=message, user_message=friendly)
+        super().__init__(message=message, user_message=friendly, status_code=status_code)
 
 
 class KnowledgeBotUnreachableError(KnowledgeBotError):
@@ -72,11 +79,12 @@ class KnowledgeBotUnreachableError(KnowledgeBotError):
         self,
         message: str = "Knowledge base service is unreachable",
         user_message: str | None = None,
+        status_code: int = 503,
     ) -> None:
         friendly = user_message or (
             "Knowledge base service is unreachable or timed out. Please verify it is running."
         )
-        super().__init__(message=message, user_message=friendly)
+        super().__init__(message=message, user_message=friendly, status_code=status_code)
 
 
 class KnowledgeBotAuthError(KnowledgeBotError):
@@ -86,9 +94,10 @@ class KnowledgeBotAuthError(KnowledgeBotError):
         self,
         message: str = "Knowledge base authentication failed",
         user_message: str | None = None,
+        status_code: int = 401,
     ) -> None:
         friendly = user_message or "Knowledge base authentication failed. Check your API key."
-        super().__init__(message=message, user_message=friendly)
+        super().__init__(message=message, user_message=friendly, status_code=status_code)
 
 
 class KnowledgeBotQuotaError(KnowledgeBotError):
@@ -98,11 +107,12 @@ class KnowledgeBotQuotaError(KnowledgeBotError):
         self,
         message: str = "Knowledge base quota exceeded",
         user_message: str | None = None,
+        status_code: int = 429,
     ) -> None:
         friendly = user_message or (
             "Knowledge base quota or rate limit exceeded. Please try again later."
         )
-        super().__init__(message=message, user_message=friendly)
+        super().__init__(message=message, user_message=friendly, status_code=status_code)
 
 
 class KnowledgeBotUpstreamError(KnowledgeBotError):
@@ -112,6 +122,7 @@ class KnowledgeBotUpstreamError(KnowledgeBotError):
         self,
         message: str = "Knowledge base upstream provider error",
         user_message: str | None = None,
+        status_code: int = 502,
     ) -> None:
         friendly = user_message or "Knowledge base upstream AI service encountered an error."
-        super().__init__(message=message, user_message=friendly)
+        super().__init__(message=message, user_message=friendly, status_code=status_code)

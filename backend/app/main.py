@@ -5,14 +5,19 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api.audit import router as audit_router
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.schema import router as schema_router
+from app.api.settings import router as settings_router
 from app.api.v1.keys import router as v1_keys_router
 from app.api.v1.query import router as v1_query_router
 from app.config import get_settings
@@ -97,6 +102,21 @@ app.include_router(schema_router)
 app.include_router(audit_router)
 app.include_router(v1_query_router)
 app.include_router(v1_keys_router)
+app.include_router(settings_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Handle request validation errors without echoing secrets from settings requests."""
+    if request.url.path.startswith("/api/settings"):
+        errors = [
+            {k: v for k, v in error.items() if k not in ("input", "ctx", "url")}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+    return await request_validation_exception_handler(request, exc)
 
 
 class KnowledgeBotHealth(BaseModel):
@@ -112,6 +132,7 @@ class HealthResponse(BaseModel):
     model: str
     db_version: str
     knowledge_bot: KnowledgeBotHealth
+    settings_ui_enabled: bool
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -132,4 +153,5 @@ async def health() -> HealthResponse:
             configured=kb_health["configured"],
             reachable=kb_health["reachable"],
         ),
+        settings_ui_enabled=current_settings.ENABLE_SETTINGS_UI,
     )

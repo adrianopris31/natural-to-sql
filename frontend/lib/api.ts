@@ -9,6 +9,11 @@ import {
   SchemaRefreshResponse,
   SSEEvent,
   TurnKind,
+  SourceItem,
+  SourceTestResult,
+  SourceType,
+  JiraSourceForm,
+  SlackSourceForm,
 } from "./types";
 import { consumeSSEStream } from "./sse";
 
@@ -159,4 +164,44 @@ export async function fetchAuditLog(limit = 200, turnId?: string): Promise<Audit
 
 export async function fetchHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
+}
+
+export async function fetchSources(): Promise<{ sources: SourceItem[] }> {
+  return request<{ sources: SourceItem[] }>("/settings/sources");
+}
+
+export async function saveJiraSource(body: JiraSourceForm): Promise<SourceItem> {
+  return request<SourceItem>("/settings/sources/jira", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function saveSlackSource(body: SlackSourceForm): Promise<SourceItem> {
+  return request<SourceItem>("/settings/sources/slack", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function testSource(
+  source: SourceType,
+  body?: JiraSourceForm | SlackSourceForm | Record<string, unknown>
+): Promise<SourceTestResult> {
+  return request<SourceTestResult>(`/settings/sources/${source}/test`, {
+    method: "POST",
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+}
+
+export async function deleteSource(source: SourceType): Promise<void> {
+  return request<void>(`/settings/sources/${source}`, {
+    method: "DELETE",
+  });
+}
+
+export async function refreshDocuments(): Promise<{ message?: string }> {
+  return request<{ message?: string }>("/settings/refresh", {
+    method: "POST",
+  });
 }

@@ -52,7 +52,9 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       - KNOWLEDGE_BOT_URL=${KNOWLEDGE_BOT_URL:-http://host.docker.internal:8100}
       - KNOWLEDGE_BOT_API_KEY=${KNOWLEDGE_BOT_API_KEY:-}
+      - KNOWLEDGE_BOT_ADMIN_KEY=${KNOWLEDGE_BOT_ADMIN_KEY:-}
       - KNOWLEDGE_BOT_TIMEOUT_SEC=${KNOWLEDGE_BOT_TIMEOUT_SEC:-90.0}
+      - ENABLE_SETTINGS_UI=${ENABLE_SETTINGS_UI:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

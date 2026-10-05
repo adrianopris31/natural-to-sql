@@ -107,7 +107,12 @@ The validator is a **pure function** (`validate(sql, schema, settings) -> SafeSQ
 | DELETE | `/api/conversations/{id}` | 204 |
 | GET | `/api/schema` | the compact schema (tables, columns) for the UI sidebar |
 | POST | `/api/schema/refresh` | re-introspect → `{tables: n}` |
-| GET | `/api/health` | `{db: ok|error, ollama: ok|error, model: str, db_version: str}` |
+| GET | `/api/health` | `{db: ok|error, ollama: ok|error, model: str, db_version: str, settings_ui_enabled: bool}` |
+| GET | `/api/settings/sources` | list Jira and Slack configured status, non-secret fields, secret_hint, and origin |
+| PUT | `/api/settings/sources/{source}` | configure Jira or Slack credentials (secrets write-only, omitted kept) |
+| DELETE | `/api/settings/sources/{source}` | remove stored credentials, revert to .env fallback |
+| POST | `/api/settings/sources/{source}/test` | test connection with submitted payload or stored credentials |
+| POST | `/api/settings/refresh` | trigger background re-index of documents in Knowledge-Bot |
 
 Rows are stored with the turn (capped at MAX_ROWS), so reopening a conversation doesn't re-run the queries.
 
@@ -137,6 +142,10 @@ DENY_TABLES=
 DENY_COLUMNS=
 CORS_ORIGINS=http://localhost:3000
 NEXT_PUBLIC_API_BASE=/api        # frontend; proxied via next.config rewrites → 127.0.0.1:8000
+KNOWLEDGE_BOT_URL=http://127.0.0.1:8100
+KNOWLEDGE_BOT_API_KEY=
+KNOWLEDGE_BOT_ADMIN_KEY=
+ENABLE_SETTINGS_UI=false
 ```
 
 ---
@@ -243,6 +252,14 @@ Status: ✅ = done (branch `feat/external-api-service`).
 - ✅ **P10.5** CLI management tool: `scripts/manage_keys.py` (`new`, `list`, `revoke`).
 - ✅ **P10.6** Test suite: unit (`tests/unit/test_api_auth.py`), integration (`tests/integration/test_v1_api.py`), bringing backend tests to 332 with 100% pass rate.
 - ⏳ **P10.7 (Roadmap)** Dynamic multi-database connection: currently single database via `TARGET_DB_URL` in `.env`; future roadmap for UI database switching and key-to-database tenant mapping.
+
+### Phase 11 — Jira/Slack Settings UI (Knowledge-Bot Phase 3) (added 2026-10-05)
+Status: ✅ = done (branch `feat/jira-slack-settings-ui`).
+- ✅ **P11.1** Backend config & client: `KNOWLEDGE_BOT_ADMIN_KEY` and `ENABLE_SETTINGS_UI` in `app/config.py`; extended `app/integrations/knowledge_bot.py` with admin client functions (`fetch_sources`, `save_jira_source`, `save_slack_source`, `test_source`, `delete_source`, `trigger_refresh`) and typed error mappings in `app/errors.py`.
+- ✅ **P11.2** Backend API & security: `app/api/settings.py` guarding `/api/settings/*` behind `ENABLE_SETTINGS_UI` (404 if disabled) and strict localhost client check (403 if non-localhost). 422 validation error handler strips raw inputs to prevent secret leaks.
+- ✅ **P11.3** Frontend contract & client: added source types and forms in `frontend/lib/types.ts`; implemented API client functions in `frontend/lib/api.ts`.
+- ✅ **P11.4** Frontend UI: `frontend/components/chat/settings-dialog.tsx` with Jira/Slack cards, origin badges (`Stored`, `From .env`, `Not set`), last refresh status, write-only secret toggle, test connection, save, refresh now, and disconnect. Header settings gear conditionally shown when `settings_ui_enabled !== false`.
+- ✅ **P11.5** Tests: unit (`tests/unit/test_settings.py`), integration (`tests/integration/test_settings_api.py`), frontend (`tests/settings-dialog.test.tsx`, updated `layout`, `api`, `mocks/handlers.ts`). 358 backend + 79 frontend tests passing.
 
 ---
 

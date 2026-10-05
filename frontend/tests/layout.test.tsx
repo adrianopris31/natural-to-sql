@@ -37,6 +37,45 @@ describe("Header Component", () => {
     expect(
       screen.getByRole("button", { name: /switch to light theme/i })
     ).toBeInTheDocument();
+
+    // Integration Settings button opens settings dialog
+    const settingsBtn = screen.getByRole("button", {
+      name: /integration settings/i,
+    });
+    expect(settingsBtn).toBeInTheDocument();
+    await userEvent.click(settingsBtn);
+
+    expect(
+      screen.getByRole("dialog", { name: "Integration Settings" })
+    ).toBeInTheDocument();
+  });
+
+  it("hides settings gear button when settings_ui_enabled is explicitly false", async () => {
+    server.use(
+      http.get("/api/health", () => {
+        return HttpResponse.json({
+          db: "ok",
+          ollama: "ok",
+          model: "qwen2.5-coder:7b",
+          db_version: "9.0.1",
+          settings_ui_enabled: false,
+        });
+      })
+    );
+
+    render(
+      <Providers>
+        <Header sidebarOpen={false} onToggleSidebar={vi.fn()} />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Connected/i)).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /integration settings/i })
+    ).not.toBeInTheDocument();
   });
 });
 

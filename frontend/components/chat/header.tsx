@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchHealth } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Menu, Moon, Sun, X, Activity, ScrollText } from "lucide-react";
+import { Menu, Moon, Sun, X, Activity, ScrollText, Settings } from "lucide-react";
 import { SqlLogPanel } from "./sql-log-panel";
+import { SettingsDialog } from "./settings-dialog";
 
 interface HeaderProps {
   sidebarOpen: boolean;
@@ -15,6 +16,7 @@ interface HeaderProps {
 export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
   const [isDark, setIsDark] = useState(false);
   const [sqlLogOpen, setSqlLogOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     // Check initial preference from document or system
@@ -48,6 +50,7 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
   });
 
   const isHealthy = health?.db === "ok" && health?.ollama === "ok";
+  const showSettings = health?.settings_ui_enabled !== false;
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-4">
@@ -111,6 +114,19 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
           <span className="hidden sm:inline">SQL log</span>
         </Button>
 
+        {/* Integration Settings */}
+        {showSettings && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Integration Settings"
+            title="Integration Settings"
+          >
+            <Settings className="size-4" />
+          </Button>
+        )}
+
         {/* Theme Toggle Button */}
         <Button
           variant="ghost"
@@ -123,6 +139,7 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
         </Button>
       </div>
       <SqlLogPanel open={sqlLogOpen} onClose={() => setSqlLogOpen(false)} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 }

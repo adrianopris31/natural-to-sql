@@ -6,7 +6,7 @@
 [![MySQL 9.0](https://img.shields.io/badge/MySQL-9.0-4479A1.svg?style=flat&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Ollama](https://img.shields.io/badge/Ollama-qwen2.5--coder:7b-black.svg)](https://ollama.com/)
 [![Security Suite](https://img.shields.io/badge/security%20corpus-100%25%20rejected-success.svg)](backend/tests/security/)
-[![Tests](https://img.shields.io/badge/tests-401%20passed-brightgreen.svg)](#testing--verification)
+[![Tests](https://img.shields.io/badge/tests-437%20passed-brightgreen.svg)](#testing--verification)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-grade, local-first **Natural Language to SQL** analytics assistant. Ask questions about your business data in plain English and receive safe, validated MySQL queries, detailed query execution plans, interactive data tables, and grounded conversational answers—**with zero cloud data leakage**.
@@ -160,8 +160,19 @@ Configure your `.env`:
 ```ini
 KNOWLEDGE_BOT_URL=http://127.0.0.1:8100
 KNOWLEDGE_BOT_API_KEY=your_api_key_here
+KNOWLEDGE_BOT_ADMIN_KEY=your_admin_api_key_here
 KNOWLEDGE_BOT_TIMEOUT_SEC=90.0
+ENABLE_SETTINGS_UI=true
 ```
+
+### Jira & Slack Settings UI
+When `ENABLE_SETTINGS_UI=true`, a gear icon appears in the header allowing configuration of Jira and Slack data sources directly from the UI without modifying server `.env` files:
+
+1. **Origin Badges**: Displays credential source (`Stored`, `From .env`, or `Not set`) along with last synchronization timestamp.
+2. **Write-Only Secrets**: Sensitive tokens (`api_token`, `bot_token`) are write-only. They are masked with hints (e.g. `••••abcd`) and cannot be inspected over the wire. When saving non-secret fields, omitting the secret preserves the existing token.
+3. **Live Connection Testing**: Test Jira and Slack configurations before saving with instant validation feedback.
+4. **On-Demand Document Refresh**: Re-index documents from configured sources with a single click.
+5. **Localhost & Flag Security Guard**: To safeguard sensitive configurations before multi-user login is added, the `/api/settings/*` endpoints return HTTP 404 unless `ENABLE_SETTINGS_UI=true` and HTTP 403 unless the request originates strictly from localhost (`127.0.0.1`, `::1`, `localhost`). In addition, validation error handlers strip raw inputs to prevent secret reflection.
 
 ---
 
@@ -757,7 +768,9 @@ Restart the application (`make dev` or `make docker-up`). The application will:
 | `CORS_ORIGINS` | `http://localhost:3000` | Allowed origins for FastAPI CORS middleware. |
 | `KNOWLEDGE_BOT_URL` | `http://127.0.0.1:8100` | HTTP endpoint of the Knowledge-Bot Q&A service. |
 | `KNOWLEDGE_BOT_API_KEY` | `""` | API authentication key (`X-API-Key`) for Knowledge-Bot. |
+| `KNOWLEDGE_BOT_ADMIN_KEY` | `""` | Admin-scope API key for managing Knowledge-Bot sources & refresh. |
 | `KNOWLEDGE_BOT_TIMEOUT_SEC` | `90.0` | Timeout in seconds for docs/Jira/Slack retrieval requests. |
+| `ENABLE_SETTINGS_UI` | `false` | Enable Jira/Slack Settings UI gear in header and `/api/settings/*` routes. |
 
 ---
 

@@ -8,6 +8,9 @@ import {
   RiskReport,
   RunRequest,
   TurnQuery,
+  SourceItem,
+  JiraSourceForm,
+  SlackSourceForm,
 } from "@/lib/types";
 
 export const mockConversations: ConversationSummary[] = [
@@ -154,6 +157,48 @@ export const mockAuditEntries: AuditEntry[] = [
     elapsed_ms: null,
   },
 ];
+
+export const mockSources: SourceItem[] = [
+  {
+    source: "jira",
+    configured: true,
+    origin: "stored",
+    fields: {
+      base_url: "https://mycompany.atlassian.net",
+      browse_url: "https://mycompany.atlassian.net/browse",
+      auth_mode: "token",
+      email: "admin@mycompany.com",
+      project_key: "PROJ",
+      jql: "ORDER BY created DESC",
+      max_issues: 250,
+    },
+    secret_hint: "tok_...4321",
+    last_refresh: "2026-10-01T12:00:00Z",
+    last_status: "Indexed 150 issues",
+  },
+  {
+    source: "slack",
+    configured: true,
+    origin: "env",
+    fields: {
+      channels: ["general", "eng"],
+      days_back: 14,
+      max_threads: 50,
+    },
+    secret_hint: "xoxb-...9876",
+    last_refresh: "2026-10-01T12:05:00Z",
+    last_status: "Indexed 45 threads",
+  },
+];
+
+export const lastSavedJira: { body: JiraSourceForm | null } = { body: null };
+export const lastSavedSlack: { body: SlackSourceForm | null } = { body: null };
+export const lastTestedSource: { source: string | null; body: unknown } = {
+  source: null,
+  body: null,
+};
+export const lastDeletedSource: { source: string | null } = { source: null };
+export const refreshDocumentsCalled = { count: 0 };
 
 /** Last body received by the /run mock, for assertions. */
 export const lastRunRequest: { body: RunRequest | null } = { body: null };
@@ -409,5 +454,107 @@ export const handlers = [
 
   http.post("/api/chat/:turnId/cancel", () => {
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  // Settings endpoints
+  http.get("/api/settings/sources", () => {
+    return HttpResponse.json({ sources: mockSources });
+  }),
+
+  http.put("/api/settings/sources/jira", async ({ request }) => {
+    const body = (await request.json()) as JiraSourceForm;
+    lastSavedJira.body = body;
+    const jiraItem = mockSources.find((s) => s.source === "jira");
+    if (jiraItem) {
+      jiraItem.configured = true;
+      jiraItem.origin = "stored";
+      jiraItem.fields = {
+        ...jiraItem.fields,
+        base_url: body.base_url,
+        browse_url: body.browse_url,
+        auth_mode: body.auth_mode,
+        email: body.email,
+        project_key: body.project_key,
+        jql: body.jql,
+        max_issues: body.max_issues,
+      };
+      if (body.api_token) {
+        jiraItem.secret_hint = "new_token_hint";
+      }
+      return HttpResponse.json(jiraItem);
+    }
+    return HttpResponse.json({
+      source: "jira",
+      configured: true,
+      origin: "stored",
+      fields: body as unknown as Record<string, unknown>,
+      secret_hint: body.api_token ? "new_token_hint" : null,
+      last_refresh: null,
+      last_status: null,
+    });
+  }),
+
+  http.put("/api/settings/sources/slack", async ({ request }) => {
+    const body = (await request.json()) as SlackSourceForm;
+    lastSavedSlack.body = body;
+    const slackItem = mockSources.find((s) => s.source === "slack");
+    if (slackItem) {
+      slackItem.configured = true;
+      slackItem.origin = "stored";
+      slackItem.fields = {
+        ...slackItem.fields,
+        channels: body.channels,
+        days_back: body.days_back,
+        max_threads: body.max_threads,
+      };
+      if (body.bot_token) {
+        slackItem.secret_hint = "new_token_hint";
+      }
+      return HttpResponse.json(slackItem);
+    }
+    return HttpResponse.json({
+      source: "slack",
+      configured: true,
+      origin: "stored",
+      fields: body as unknown as Record<string, unknown>,
+      secret_hint: body.bot_token ? "new_token_hint" : null,
+      last_refresh: null,
+      last_status: null,
+    });
+  }),
+
+  http.post("/api/settings/sources/:source/test", async ({ params, request }) => {
+    const source = String(params.source);
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {
+      // body optional
+    }
+    lastTestedSource.source = source;
+    lastTestedSource.body = body;
+    return HttpResponse.json({
+      ok: true,
+      message: `${source.charAt(0).toUpperCase() + source.slice(1)} connection verified successfully.`,
+    });
+  }),
+
+  http.delete("/api/settings/sources/:source", ({ params }) => {
+    const source = String(params.source);
+    lastDeletedSource.source = source;
+    const item = mockSources.find((s) => s.source === source);
+    if (item) {
+      item.configured = false;
+      item.origin = "none";
+      item.secret_hint = null;
+    }
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post("/api/settings/refresh", () => {
+    refreshDocumentsCalled.count += 1;
+    return HttpResponse.json({
+      message: "Knowledge base documents re-indexed successfully.",
+    });
   }),
 ];

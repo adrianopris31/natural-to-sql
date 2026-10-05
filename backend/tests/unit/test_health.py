@@ -31,6 +31,7 @@ async def test_health_check_all_ok() -> None:
         "model": "qwen2.5-coder:7b",
         "db_version": "9.0.1",
         "knowledge_bot": {"configured": True, "reachable": True},
+        "settings_ui_enabled": True,
     }
 
 
@@ -56,6 +57,7 @@ async def test_health_check_ollama_down() -> None:
         "model": "qwen2.5-coder:7b",
         "db_version": "9.0.1",
         "knowledge_bot": {"configured": False, "reachable": False},
+        "settings_ui_enabled": True,
     }
 
 
@@ -81,4 +83,28 @@ async def test_health_check_knowledge_bot_unreachable_does_not_fail() -> None:
         "model": "qwen2.5-coder:7b",
         "db_version": "9.0.1",
         "knowledge_bot": {"configured": True, "reachable": False},
+        "settings_ui_enabled": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_health_check_settings_ui_disabled() -> None:
+    transport = ASGITransport(app=app)
+    with (
+        patch("app.main.check_db_health", new_callable=AsyncMock) as mock_db,
+        patch("app.main.get_llm_client") as mock_get_client,
+        patch("app.main.docs_health", new_callable=AsyncMock) as mock_docs_health,
+        patch("app.main.get_settings") as mock_settings,
+    ):
+        from app.config import Settings
+
+        mock_db.return_value = (True, "9.0.1")
+        mock_get_client.return_value = FakeLLMClient(health_status=True)
+        mock_docs_health.return_value = {"configured": True, "reachable": True}
+        mock_settings.return_value = Settings(_env_file=None, ENABLE_SETTINGS_UI=False)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["settings_ui_enabled"] is False

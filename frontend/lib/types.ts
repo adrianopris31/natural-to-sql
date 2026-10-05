@@ -240,5 +240,42 @@ export interface HealthResponse {
   model: string;
   db_version: string;
   knowledge_bot?: KnowledgeBotHealth;
+  settings_ui_enabled?: boolean;
+}
+
+export type SourceOrigin = "stored" | "env" | "none";
+export type SourceType = "jira" | "slack";
+
+export interface SourceItem {
+  source: SourceType;
+  configured: boolean;
+  origin: SourceOrigin;
+  fields: Record<string, unknown>;
+  secret_hint: string | null;
+  last_refresh: string | null;
+  last_status: string | null;
+}
+
+export interface SourceTestResult {
+  ok: boolean;
+  message: string;
+}
+
+export interface JiraSourceForm {
+  base_url: string;
+  browse_url?: string;
+  auth_mode: "token" | "bearer";
+  email?: string;
+  api_token?: string;
+  project_key?: string;
+  jql?: string;
+  max_issues?: number;
+}
+
+export interface SlackSourceForm {
+  bot_token?: string;
+  channels: string[];
+  days_back?: number;
+  max_threads?: number;
 }
 

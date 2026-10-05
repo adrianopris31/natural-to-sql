@@ -10,6 +10,12 @@ import {
   refreshSchema,
   runTurnStream,
   cancelTurn,
+  fetchSources,
+  saveJiraSource,
+  saveSlackSource,
+  testSource,
+  deleteSource,
+  refreshDocuments,
 } from "@/lib/api";
 import { SSEEvent } from "@/lib/types";
 
@@ -133,5 +139,38 @@ describe("API Client (lib/api.ts)", () => {
       expect(docsAnswer.data.sources).toHaveLength(3);
     }
     expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+
+  it("handles settings API operations (fetch, save, test, delete, refresh)", async () => {
+    // Fetch sources
+    const sourcesRes = await fetchSources();
+    expect(sourcesRes.sources).toHaveLength(2);
+    expect(sourcesRes.sources[0].source).toBe("jira");
+
+    // Save Jira
+    const updatedJira = await saveJiraSource({
+      base_url: "https://custom.atlassian.net",
+      auth_mode: "token",
+      email: "test@custom.com",
+    });
+    expect(updatedJira.fields.base_url).toBe("https://custom.atlassian.net");
+
+    // Save Slack
+    const updatedSlack = await saveSlackSource({
+      channels: ["dev", "random"],
+      days_back: 7,
+    });
+    expect(updatedSlack.fields.channels).toEqual(["dev", "random"]);
+
+    // Test connection
+    const testResult = await testSource("jira");
+    expect(testResult.ok).toBe(true);
+
+    // Delete source
+    await expect(deleteSource("jira")).resolves.toBeUndefined();
+
+    // Refresh documents
+    const refreshRes = await refreshDocuments();
+    expect(refreshRes.message).toContain("re-indexed");
   });
 });

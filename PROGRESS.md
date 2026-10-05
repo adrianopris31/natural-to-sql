@@ -2,16 +2,14 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Phase 10 (Headless External API Service & Key Management) is 100% completed, verified, and merged into `main` (`ae0cdc9`). All 332 backend tests and 69 frontend tests pass with zero lint or type errors.
+Phase 11 (Jira/Slack Settings UI / Knowledge-Bot Phase 3) is 100% completed, verified, and ready on branch `feat/jira-slack-settings-ui`. All 358 backend tests and 79 frontend tests (437 total) pass with zero lint or type errors.
 
 ## NEXT
-Options for next milestone:
-1. **Dynamic Database Switching**: Allow users to switch databases from the UI (or assign databases per API key tenant), moving beyond single `.env` `TARGET_DB_URL`.
+1. **Dynamic Database Switching (P10.7)**: Allow users to switch databases from the UI or assign databases per API key tenant.
 2. **Phase 8 follow-ups / Evals**: Re-run eval benchmark (`make eval`) on real schema, live checks with Ollama.
-3. **Knowledge-Bot Phase 3**: Jira/Slack credentials configuration UI (modal/settings page in frontend) once KB-2 admin routes are ready.
 
 ## OPEN (need user input)
-- Which next direction would you like to prioritize? (Dynamic DB switching, KB-2 settings UI, or evals/live tuning?)
+- Prioritize dynamic DB switching vs live eval tuning on real MySQL?
 
 ## BLOCKERS
 none
@@ -45,6 +43,7 @@ none
 - `README.md` (architecture + 13-layer model; it wrongly claimed "formula-injection sanitization", which isn't implemented, so that was removed) and `STARTUP_GUIDE.md` (§5 Using the app: preview → approve → run).
 
 ## DECISIONS
+- 2026-10-05: Phase 11 Settings UI: write-only secrets (never stored/echoed/pre-filled), /api/settings/* guarded by ENABLE_SETTINGS_UI & strict localhost check (403), 422 handler sanitizes sensitive input.
 - 2026-10-01: Phase 10 External API: SHA-256 hashed API keys (`nl_live_`), scopes (`query`, `admin`), in-memory sliding window rate limiter (60 req/min), daily quota tracking, auto-approve risk gate (safe queries execute immediately in RO transaction; high-risk/Cartesian/blocked queries require explicit approval via /approve), CLI manage_keys.py tool.
 - 2026-10-01: Target DB architecture: remain on single database configured via TARGET_DB_URL in .env for now; dynamic database switching from UI / headless external API is planned for future phase.
 - 2026-10-01: Knowledge-bot integration: Docs mode bypasses SQL validation/approval gates, streams directly to done, handles missing docs as refusal cards without erroring; health check reports non-blocking degradation if knowledge-bot is down.
@@ -68,6 +67,7 @@ none
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
+- 2026-10-05: Phase 11 complete on branch `feat/jira-slack-settings-ui`. Implemented Jira/Slack settings UI modal, write-only secrets, localhost & feature-flag security guards, /api/settings/sources & /refresh, 358 backend + 79 frontend tests green.
 - 2026-10-01: Phase 10 complete on branch `feat/external-api-service`. Implemented `/v1/query`, `/v1/query/{turn_id}/approve`, `/v1/query/{turn_id}/cancel`, `/v1/keys`, `/v1/audit`, `/v1/health`. Added API key auth, rate limiting, daily quota tracking, auto-approve risk gate, and CLI `scripts/manage_keys.py`. 332 backend tests and 69 frontend tests passing.
 - 2026-10-01: Completed Knowledge-Bot Phases 1 & 2 on branch `feat/knowledge-bot-integration`. Backend: `integrations/knowledge_bot.py`, `services/docs.py`, `app.db` auto-migrations for `kind`/`sources_json`, 314 pytest passing. Frontend: Data/Docs segmented control, source filters, `DocsAnswer` with source links & refusal view, sidebar icons, health banner, 69 Vitest passing.
 - 2026-09-30 (Windows chat session): Fixed Windows Corepack pnpm.cjs shim & installed frontend dependencies; normalized config.py paths with as_posix() for macOS/Windows parity; updated dev.ps1 pnpm fallback; documented Windows WampServer/HeidiSQL walkthrough & troubleshooting in README.md.
@@ -77,10 +77,4 @@ none
 - 2026-09-29: Claude review + fix: diagnosed real-DB hang (introspection 0.1s, LLM gen 10–30s+, Next proxy dropped idle SSE at 30s → turns stuck `generating_sql`). Added heartbeat, proxyTimeout, stream-cutoff handling + tests (see CHANGES MADE BY CLAUDE). The review found validator holes H1–H5.
 - 2026-09-29: Diagnosed and resolved DB connection & latency on real DB (`easybiz_data_1`): fixed URL password escaping, normalized APP_DB_PATH, wrapped SSE pipeline with global error handler, verified real queries in ~6.9-14s.
 - 2026-09-29: Full-suite quality gate passed: 213 backend tests, 36 frontend tests, 87.5% eval accuracy on qwen2.5-coder:7b, 100% security corpus passed, Next.js build green.
-- 2026-09-29: Phase 6 & 7 complete: table_selector.py with FK expansion, questions.yaml (32 questions), evals/run.py, root Makefile, root README.md.
-- 2026-09-29: Phase 4 complete: store/ (SQLite app.db), services/chat.py (pipeline, repair loop, history), api/chat.py (SSE streaming), api/conversations.py (CRUD).
-- 2026-09-29: Phase 3 complete: llm/client.py (Ollama + FakeLLM), llm/prompts.py (v1.0 prompts), llm/sql_generator.py (SqlDraft), llm/answerer.py, /api/health Ollama check.
-- 2026-09-29: Phase 2 complete: core/validator.py (L4-L10 pure AST safety, SafeSQL token), core/executor.py (L2, L3, L9, L11), 68 attacks rejected (100%), 42 safe queries passed, P2.4 defense-in-depth verified.
-- 2026-09-29: Phase 5 frontend complete: lib/sse.ts, lib/api.ts, ChatLayout, Sidebar, SchemaBrowser, SqlBlock, ResultTable, MarkdownAnswer, useChat hook, 36 Vitest tests green.
-- 2026-09-29: Phase 1 complete: config.py (Settings), core/db.py (asyncmy engine), core/schema.py (introspection + to_prompt), /api/schema & real /api/health.
-- 2026-09-29: Phase 0 complete: P0.1 repo skeleton & git init, P0.2 backend scaffold (uv, FastAPI, ruff, mypy), P0.3 frontend scaffold (Next.js 15, TS, Tailwind, shadcn), P0.4 dev MySQL 9.0 on :3307 & e-commerce seed.
+- 2026-09-29: Phases 0–7 completed: scaffold, DB/schema, AST validator (L4–L10), LLM client, pipeline/SSE, frontend, evals & table selection. 213 backend + 36 frontend tests passing.

@@ -46,7 +46,9 @@ class Settings(BaseSettings):
     NEXT_PUBLIC_API_BASE: str = "/api"
     KNOWLEDGE_BOT_URL: str = "http://127.0.0.1:8100"
     KNOWLEDGE_BOT_API_KEY: str = ""
+    KNOWLEDGE_BOT_ADMIN_KEY: str = ""
     KNOWLEDGE_BOT_TIMEOUT_SEC: float = 90.0
+    ENABLE_SETTINGS_UI: bool = False
 
     @field_validator("TARGET_DB_URL", mode="before")
     @classmethod
