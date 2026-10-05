@@ -6,7 +6,7 @@
 [![MySQL 9.0](https://img.shields.io/badge/MySQL-9.0-4479A1.svg?style=flat&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Ollama](https://img.shields.io/badge/Ollama-qwen2.5--coder:7b-black.svg)](https://ollama.com/)
 [![Security Suite](https://img.shields.io/badge/security%20corpus-100%25%20rejected-success.svg)](backend/tests/security/)
-[![Tests](https://img.shields.io/badge/tests-437%20passed-brightgreen.svg)](#testing--verification)
+[![Tests](https://img.shields.io/badge/tests-453%20passed-brightgreen.svg)](#testing--verification)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-grade, local-first **Natural Language to SQL** analytics assistant. Ask questions about your business data in plain English and receive safe, validated MySQL queries, detailed query execution plans, interactive data tables, and grounded conversational answers—**with zero cloud data leakage**.
@@ -162,17 +162,24 @@ KNOWLEDGE_BOT_URL=http://127.0.0.1:8100
 KNOWLEDGE_BOT_API_KEY=your_api_key_here
 KNOWLEDGE_BOT_ADMIN_KEY=your_admin_api_key_here
 KNOWLEDGE_BOT_TIMEOUT_SEC=90.0
+KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC=900.0
 ENABLE_SETTINGS_UI=true
 ```
 
 ### Jira & Slack Settings UI
-When `ENABLE_SETTINGS_UI=true`, a gear icon appears in the header allowing configuration of Jira and Slack data sources directly from the UI without modifying server `.env` files:
+When `ENABLE_SETTINGS_UI=true` and the app is opened on the backend's own machine (`localhost` / `127.0.0.1`), a gear icon appears in the header allowing configuration of Jira and Slack data sources directly from the UI without modifying server `.env` files:
 
 1. **Origin Badges**: Displays credential source (`Stored`, `From .env`, or `Not set`) along with last synchronization timestamp.
-2. **Write-Only Secrets**: Sensitive tokens (`api_token`, `bot_token`) are write-only. They are masked with hints (e.g. `••••abcd`) and cannot be inspected over the wire. When saving non-secret fields, omitting the secret preserves the existing token.
+2. **Write-Only Secrets**: Sensitive tokens (`api_token`, `bot_token`) are write-only and never returned, not even masked (knowledge-bot always sends `secret_hint: null`). For a **stored** connection, leaving the token empty keeps it. A connection running on the `.env` token needs a token typed in to save, since `.env` tokens are never copied into storage. Moving Jira's base URL to another site also asks for the token again: a stored token is never sent to a new site.
 3. **Live Connection Testing**: Test Jira and Slack configurations before saving with instant validation feedback.
-4. **On-Demand Document Refresh**: Re-index documents from configured sources with a single click.
-5. **Localhost & Flag Security Guard**: To safeguard sensitive configurations before multi-user login is added, the `/api/settings/*` endpoints return HTTP 404 unless `ENABLE_SETTINGS_UI=true` and HTTP 403 unless the request originates strictly from localhost (`127.0.0.1`, `::1`, `localhost`). In addition, validation error handlers strip raw inputs to prevent secret reflection.
+4. **On-Demand Document Refresh**: Re-fetch documents from the configured sources. knowledge-bot answers only when the refresh has finished, so this call uses `KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC` (900s) instead of the normal timeout; a refresh already running shows knowledge-bot's "already running" message.
+5. **Localhost & Flag Security Guard** (until login exists): `/api/settings/*` returns 404 unless `ENABLE_SETTINGS_UI=true`, and 403 unless **all** of these hold:
+   - the peer is a loopback address (`127.0.0.0/8`, `::1`, IPv4-mapped `::ffff:127.0.0.1`);
+   - **no proxy** was involved (`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP` absent). The Next.js `/api` rewrite sends no `X-Forwarded-For`, so a proxied request arrives from `127.0.0.1` whoever made it, including other machines on the network. The settings page therefore calls the backend **directly** at `NEXT_PUBLIC_SETTINGS_API_BASE` (default `http://127.0.0.1:8000/api`), so the app must be opened from an origin listed in `CORS_ORIGINS`;
+   - the `Host` header names this machine (blocks DNS rebinding);
+   - the request carries `X-Requested-With: natural-to-sql`, which forces a CORS preflight so other websites cannot fire settings requests (CSRF).
+
+   Under Docker Compose the backend sees the Docker gateway rather than loopback, so the settings page is unavailable there by design. Validation errors on these routes never echo the request body.
 
 ---
 
@@ -770,7 +777,9 @@ Restart the application (`make dev` or `make docker-up`). The application will:
 | `KNOWLEDGE_BOT_API_KEY` | `""` | API authentication key (`X-API-Key`) for Knowledge-Bot. |
 | `KNOWLEDGE_BOT_ADMIN_KEY` | `""` | Admin-scope API key for managing Knowledge-Bot sources & refresh. |
 | `KNOWLEDGE_BOT_TIMEOUT_SEC` | `90.0` | Timeout in seconds for docs/Jira/Slack retrieval requests. |
+| `KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC` | `900.0` | Timeout for the settings page's Refresh, which waits for the whole fetch. |
 | `ENABLE_SETTINGS_UI` | `false` | Enable Jira/Slack Settings UI gear in header and `/api/settings/*` routes. |
+| `NEXT_PUBLIC_SETTINGS_API_BASE` | `http://127.0.0.1:8000/api` | Frontend: where the settings page calls the backend directly (never through the Next.js proxy). |
 
 ---
 

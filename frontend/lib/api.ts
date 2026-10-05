@@ -19,6 +19,16 @@ import { consumeSSEStream } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
 
+// Settings calls go straight to the backend, never through the Next.js /api
+// rewrite: the proxy hides who is asking (every proxied request arrives from
+// 127.0.0.1), so the backend refuses proxied settings requests outright.
+export const SETTINGS_API_BASE =
+  process.env.NEXT_PUBLIC_SETTINGS_API_BASE || "http://127.0.0.1:8000/api";
+
+// The backend requires this on settings routes. A custom header forces a CORS
+// preflight, so another website cannot fire a settings request at the backend.
+const SETTINGS_HEADERS = { "X-Requested-With": "natural-to-sql" };
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -30,8 +40,12 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  base: string = API_BASE
+): Promise<T> {
+  const url = `${base}${path}`;
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -166,19 +180,42 @@ export async function fetchHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
 }
 
+/** The readable reason behind a failed request: the backend's `detail` when it sent one. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.body && typeof err.body === "object") {
+    const detail = (err.body as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (Array.isArray(detail)) {
+      const msgs = detail
+        .map((item) => (item && typeof item === "object" ? (item as { msg?: unknown }).msg : null))
+        .filter((msg): msg is string => typeof msg === "string");
+      if (msgs.length) return msgs.join("; ");
+    }
+  }
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+function settingsRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(
+    `/settings${path}`,
+    { ...init, headers: { ...SETTINGS_HEADERS, ...init?.headers } },
+    SETTINGS_API_BASE
+  );
+}
+
 export async function fetchSources(): Promise<{ sources: SourceItem[] }> {
-  return request<{ sources: SourceItem[] }>("/settings/sources");
+  return settingsRequest<{ sources: SourceItem[] }>("/sources");
 }
 
 export async function saveJiraSource(body: JiraSourceForm): Promise<SourceItem> {
-  return request<SourceItem>("/settings/sources/jira", {
+  return settingsRequest<SourceItem>("/sources/jira", {
     method: "PUT",
     body: JSON.stringify(body),
   });
 }
 
 export async function saveSlackSource(body: SlackSourceForm): Promise<SourceItem> {
-  return request<SourceItem>("/settings/sources/slack", {
+  return settingsRequest<SourceItem>("/sources/slack", {
     method: "PUT",
     body: JSON.stringify(body),
   });
@@ -188,20 +225,27 @@ export async function testSource(
   source: SourceType,
   body?: JiraSourceForm | SlackSourceForm | Record<string, unknown>
 ): Promise<SourceTestResult> {
-  return request<SourceTestResult>(`/settings/sources/${source}/test`, {
+  return settingsRequest<SourceTestResult>(`/sources/${source}/test`, {
     method: "POST",
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 }
 
 export async function deleteSource(source: SourceType): Promise<void> {
-  return request<void>(`/settings/sources/${source}`, {
+  return settingsRequest<void>(`/sources/${source}`, {
     method: "DELETE",
   });
 }
 
-export async function refreshDocuments(): Promise<{ message?: string }> {
-  return request<{ message?: string }>("/settings/refresh", {
+/** knowledge-bot's refresh result: it answers once the fetch has finished. */
+export interface RefreshResult {
+  ok?: boolean;
+  documents?: number;
+  message?: string;
+}
+
+export async function refreshDocuments(): Promise<RefreshResult> {
+  return settingsRequest<RefreshResult>("/refresh", {
     method: "POST",
   });
 }

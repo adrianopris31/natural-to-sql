@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     KNOWLEDGE_BOT_API_KEY: str = ""
     KNOWLEDGE_BOT_ADMIN_KEY: str = ""
     KNOWLEDGE_BOT_TIMEOUT_SEC: float = 90.0
+    KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC: float = 900.0
     ENABLE_SETTINGS_UI: bool = False
 
     @field_validator("TARGET_DB_URL", mode="before")

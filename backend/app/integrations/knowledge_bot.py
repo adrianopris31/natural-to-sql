@@ -288,10 +288,12 @@ async def _admin_request(
     *,
     json_data: Any | None = None,
     params: dict[str, Any] | None = None,
+    timeout: float | None = None,
 ) -> httpx.Response:
     """Perform an authenticated admin request to knowledge-bot.
 
     Never logs payloads or secrets. Maps transport and HTTP errors to typed exceptions.
+    `timeout` overrides KNOWLEDGE_BOT_TIMEOUT_SEC for calls that are slow by design.
     """
     settings = get_settings()
     admin_key = _get_admin_key()
@@ -300,7 +302,8 @@ async def _admin_request(
         "X-API-Key": admin_key,
         "Content-Type": "application/json",
     }
-    timeout = settings.KNOWLEDGE_BOT_TIMEOUT_SEC
+    if timeout is None:
+        timeout = settings.KNOWLEDGE_BOT_TIMEOUT_SEC
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -469,9 +472,18 @@ async def delete_source(source: str) -> None:
 
 
 async def trigger_refresh(full: bool = False) -> dict[str, Any]:
-    """Trigger a remote sync refresh on knowledge-bot."""
+    """Run a remote sync refresh on knowledge-bot and return its result.
+
+    knowledge-bot answers only once the whole fetch has finished (and 409 while
+    another one is running), so this call gets its own, much longer timeout.
+    """
     params = {"full": "true"} if full else {}
-    resp = await _admin_request("POST", "/admin/refresh", params=params)
+    resp = await _admin_request(
+        "POST",
+        "/admin/refresh",
+        params=params,
+        timeout=get_settings().KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC,
+    )
     try:
         data = resp.json()
         if isinstance(data, dict):

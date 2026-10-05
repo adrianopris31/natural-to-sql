@@ -2,7 +2,7 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Phase 11 (Jira/Slack Settings UI / Knowledge-Bot Phase 3) is 100% completed, verified, and ready on branch `feat/jira-slack-settings-ui`. All 358 backend tests and 79 frontend tests (437 total) pass with zero lint or type errors.
+Phase 11 (Jira/Slack Settings UI / Knowledge-Bot Phase 3) review fixes completed, verified, and committed on branch `feat/jira-slack-settings-ui`. All 369 backend tests and 84 frontend tests (453 total) pass with zero lint or type errors.
 
 ## NEXT
 1. **Dynamic Database Switching (P10.7)**: Allow users to switch databases from the UI or assign databases per API key tenant.
@@ -13,6 +13,24 @@ Phase 11 (Jira/Slack Settings UI / Knowledge-Bot Phase 3) is 100% completed, ver
 
 ## BLOCKERS
 none
+
+## CHANGES MADE BY CLAUDE (2026-10-05, committed on branch `feat/jira-slack-settings-ui`; review fixes for Phase 11)
+Review of `535b8b7` found the settings guard bypassable and four smaller issues. All fixed here.
+1. **Localhost guard bypass (security).** Measured: the Next.js `/api` rewrite sends NO `X-Forwarded-For`, so every proxied request reached the backend from `127.0.0.1`. Anyone on the LAN could use the settings routes through `http://<host-ip>:3000` (`next dev` listens on all interfaces), no spoofing needed.
+   - `backend/app/api/settings.py` `require_localhost`: 403 if any proxy header (`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP`) is present, if the peer isn't loopback, or if the `Host` header isn't this machine (DNS rebinding).
+   - `frontend/lib/api.ts`: settings calls go **directly** to `SETTINGS_API_BASE` (`NEXT_PUBLIC_SETTINGS_API_BASE`, default `http://127.0.0.1:8000/api`), not through the proxy. Docker: the settings page is unavailable (the backend sees the Docker gateway), by design.
+   - Verified live (uvicorn and `next dev` on spare ports): direct loopback passes; via Next on localhost, via Next on the LAN IP, via Next with a spoofed `X-Forwarded-For` and a rebinding `Host` all get 403.
+2. **Loopback check.** It compared exact strings; it now uses `ipaddress` (`127.0.0.0/8`, `::1`, IPv4-mapped `::ffff:127.0.0.1`). `testclient` was removed from the allowlist.
+3. **Refresh timeout.** knowledge-bot's `/admin/refresh` answers only once the fetch is done, so a refresh longer than 90s showed "timed out" while it kept running. New `KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC=900.0` (`config.py`, `.env.example`, `docker-compose.yml`) is used by `trigger_refresh`. A 409 (already running) passes through with knowledge-bot's message. The UI says "Refresh complete: N documents." instead of "started".
+4. **`.env` origin looked stored** (`settings-dialog.tsx`). The masked token, "Keep existing" and Disconnect are shown only when `origin === "stored"`. With origin `env` the token input is shown, with a note that saving needs a token (knowledge-bot never copies the `.env` token). Changing Jira's base URL to another site switches to the token input, with a note (knowledge-bot reuses a stored token only on the same site).
+5. **CSRF.** Settings routes require `X-Requested-With: natural-to-sql` (`require_settings_client`). It forces a CORS preflight, so another website can't fire `POST /refresh` or a test. The frontend sends it on every settings call.
+6. **Smaller fixes.**
+   - The gear is shown only when `settings_ui_enabled === true` and the page is on localhost (`header.tsx`).
+   - Dialog errors show the backend's `detail` (new `apiErrorMessage` in `lib/api.ts`) instead of "API request … failed with status 422".
+   - Forms re-seed only when the saved values change (`formKey`), so a refresh no longer wipes unsaved edits.
+   - Dropped the duplicate `invalidateQueries` after refresh.
+- Tests: backend 369 passed (new: proxied/spoofed/rebinding/missing-header 403s, every loopback form accepted, refresh 409 passthrough, refresh timeout). Frontend 84 passed (new: direct base + CSRF header, Disconnect only when stored, Jira site change asks for a token, backend error shown, refresh 409 message; `resetMockSources()` keeps tests independent). ruff, mypy, tsc and eslint clean. README §Settings UI and the env table updated.
+- **Before using it**: set `CORS_ORIGINS` to include the origin you open the app on (your `.env` has `http://localhost:3000`, so open the app at `localhost:3000`, not `127.0.0.1:3000`).
 
 <!-- Agents: Claude's work below is committed on branch feat/sql-preview-safety. Once it's merged to main, compact this section into one LOG line. -->
 ## CHANGES MADE BY CLAUDE (2026-09-29, committed on branch `feat/sql-preview-safety`; the agents keep these)
@@ -43,6 +61,7 @@ none
 - `README.md` (architecture + 13-layer model; it wrongly claimed "formula-injection sanitization", which isn't implemented, so that was removed) and `STARTUP_GUIDE.md` (§5 Using the app: preview → approve → run).
 
 ## DECISIONS
+- 2026-10-05: Phase 11 Settings security hardening: direct frontend base (bypassing Next proxy) with CSRF header X-Requested-With, strict loopback IP parsing with ipaddress, DNS rebinding Host check, proxy header rejection, 900s refresh timeout.
 - 2026-10-05: Phase 11 Settings UI: write-only secrets (never stored/echoed/pre-filled), /api/settings/* guarded by ENABLE_SETTINGS_UI & strict localhost check (403), 422 handler sanitizes sensitive input.
 - 2026-10-01: Phase 10 External API: SHA-256 hashed API keys (`nl_live_`), scopes (`query`, `admin`), in-memory sliding window rate limiter (60 req/min), daily quota tracking, auto-approve risk gate (safe queries execute immediately in RO transaction; high-risk/Cartesian/blocked queries require explicit approval via /approve), CLI manage_keys.py tool.
 - 2026-10-01: Target DB architecture: remain on single database configured via TARGET_DB_URL in .env for now; dynamic database switching from UI / headless external API is planned for future phase.
@@ -67,6 +86,7 @@ none
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
+- 2026-10-05: Phase 11 review fixes on branch `feat/jira-slack-settings-ui`. Closed Next proxy localhost guard bypass via direct client call & proxy header rejection, added CSRF header, ipaddress loopback validation, 900s refresh timeout, write-only UX refinements. 369 backend + 84 frontend tests green.
 - 2026-10-05: Phase 11 complete on branch `feat/jira-slack-settings-ui`. Implemented Jira/Slack settings UI modal, write-only secrets, localhost & feature-flag security guards, /api/settings/sources & /refresh, 358 backend + 79 frontend tests green.
 - 2026-10-01: Phase 10 complete on branch `feat/external-api-service`. Implemented `/v1/query`, `/v1/query/{turn_id}/approve`, `/v1/query/{turn_id}/cancel`, `/v1/keys`, `/v1/audit`, `/v1/health`. Added API key auth, rate limiting, daily quota tracking, auto-approve risk gate, and CLI `scripts/manage_keys.py`. 332 backend tests and 69 frontend tests passing.
 - 2026-10-01: Completed Knowledge-Bot Phases 1 & 2 on branch `feat/knowledge-bot-integration`. Backend: `integrations/knowledge_bot.py`, `services/docs.py`, `app.db` auto-migrations for `kind`/`sources_json`, 314 pytest passing. Frontend: Data/Docs segmented control, source filters, `DocsAnswer` with source links & refusal view, sidebar icons, health banner, 69 Vitest passing.

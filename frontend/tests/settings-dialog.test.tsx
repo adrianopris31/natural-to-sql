@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { SettingsDialog } from "@/components/chat/settings-dialog";
+import { SETTINGS_API_BASE } from "@/lib/api";
 import { Providers } from "@/components/providers";
 import { server } from "./mocks/server";
 import {
@@ -11,11 +12,13 @@ import {
   lastSavedSlack,
   lastTestedSource,
   refreshDocumentsCalled,
+  resetMockSources,
 } from "./mocks/handlers";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   server.resetHandlers();
+  resetMockSources();
   lastSavedJira.body = null;
   lastSavedSlack.body = null;
   lastTestedSource.source = null;
@@ -80,11 +83,15 @@ describe("SettingsDialog Component", () => {
     expect(screen.queryByDisplayValue("tok_secret_12345")).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue("xoxb-real-secret")).not.toBeInTheDocument();
 
-    // Masked inputs are shown when configured
+    // Only the STORED Jira token is masked with a Replace button. Slack's token
+    // comes from .env, so its field is an empty input (saving needs a token).
     const replaceButtons = screen.getAllByRole("button", {
       name: /replace secret/i,
     });
-    expect(replaceButtons).toHaveLength(2); // One for Jira, one for Slack
+    expect(replaceButtons).toHaveLength(1);
+    const slackTokenInput = screen.getByPlaceholderText("Enter bot token (xoxb-...)");
+    expect(slackTokenInput).toHaveValue("");
+    expect(slackTokenInput).toHaveAttribute("type", "password");
 
     // Click "Replace secret" on Jira
     await userEvent.click(replaceButtons[0]);
@@ -136,7 +143,7 @@ describe("SettingsDialog Component", () => {
 
   it("handles test connection failure with error message", async () => {
     server.use(
-      http.post("/api/settings/sources/jira/test", () => {
+      http.post(`${SETTINGS_API_BASE}/settings/sources/jira/test`, () => {
         return HttpResponse.json({
           ok: false,
           message: "Invalid credentials or unauthorized (401)",
@@ -198,14 +205,9 @@ describe("SettingsDialog Component", () => {
       ).toBeInTheDocument();
     });
 
-    // Now test Slack Save with replaced secret
-    const replaceButtons = screen.getAllByRole("button", {
-      name: /replace secret/i,
-    });
-    await userEvent.click(replaceButtons[1]); // Slack's replace button
-
+    // Slack runs on the .env token: saving it stores a new connection, typed in
     const botTokenInput = screen.getByPlaceholderText(
-      "Enter new bot token (xoxb-...)"
+      "Enter bot token (xoxb-...)"
     );
     await userEvent.type(botTokenInput, "xoxb-new-token-1234");
 
@@ -262,8 +264,126 @@ describe("SettingsDialog Component", () => {
 
     await waitFor(() => {
       expect(refreshDocumentsCalled.count).toBe(1);
+      expect(screen.getByText("Refresh complete: 42 documents.")).toBeInTheDocument();
+    });
+  });
+
+  it("sends settings calls straight to the backend with the CSRF header", async () => {
+    let seenHeader: string | null = null;
+    server.use(
+      http.get(`${SETTINGS_API_BASE}/settings/sources`, ({ request }) => {
+        seenHeader = request.headers.get("X-Requested-With");
+        return HttpResponse.json({ sources: [] });
+      })
+    );
+
+    render(
+      <Providers>
+        <SettingsDialog open={true} onClose={vi.fn()} />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(seenHeader).toBe("natural-to-sql");
+    });
+    expect(SETTINGS_API_BASE).toBe("http://127.0.0.1:8000/api");
+  });
+
+  it("offers Disconnect only for a stored connection, not one from .env", async () => {
+    render(
+      <Providers>
+        <SettingsDialog open={true} onClose={vi.fn()} />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Jira" })).toBeInTheDocument();
+    });
+
+    // Jira is stored, Slack comes from .env: one Disconnect, Jira's.
+    expect(screen.getAllByRole("button", { name: /disconnect/i })).toHaveLength(1);
+    expect(screen.getAllByText(/currently using the token from \.env/i)).toHaveLength(1);
+  });
+
+  it("asks for the Jira token again when the base URL moves to another site", async () => {
+    render(
+      <Providers>
+        <SettingsDialog open={true} onClose={vi.fn()} />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Jira" })).toBeInTheDocument();
+    });
+
+    const baseUrl = screen.getByLabelText(/base url/i);
+    // Same site, different path: the stored token can still be kept.
+    await userEvent.clear(baseUrl);
+    await userEvent.type(baseUrl, "https://mycompany.atlassian.net/jira");
+    expect(screen.getByRole("button", { name: /replace secret/i })).toBeInTheDocument();
+
+    // Another site: the masked token gives way to an empty token input.
+    await userEvent.clear(baseUrl);
+    await userEvent.type(baseUrl, "https://other.atlassian.net");
+    expect(screen.queryByRole("button", { name: /replace secret/i })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Enter new API token")).toHaveValue("");
+    expect(screen.getByText(/points at a different site/i)).toBeInTheDocument();
+  });
+
+  it("shows the backend's reason when a save fails", async () => {
+    server.use(
+      http.put(`${SETTINGS_API_BASE}/settings/sources/jira`, () =>
+        HttpResponse.json(
+          { detail: "Credential storage is not set up: CREDENTIALS_KEY is missing." },
+          { status: 503 }
+        )
+      )
+    );
+
+    render(
+      <Providers>
+        <SettingsDialog open={true} onClose={vi.fn()} />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Jira" })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getAllByRole("button", { name: /^save$/i })[0]);
+
+    await waitFor(() => {
       expect(
-        screen.getByText("Knowledge base documents re-indexed successfully.")
+        screen.getByText("Credential storage is not set up: CREDENTIALS_KEY is missing.")
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("reports a refresh already running instead of a generic failure", async () => {
+    server.use(
+      http.post(`${SETTINGS_API_BASE}/settings/refresh`, () =>
+        HttpResponse.json(
+          { detail: "A refresh is already running. Give it a moment." },
+          { status: 409 }
+        )
+      )
+    );
+
+    render(
+      <Providers>
+        <SettingsDialog open={true} onClose={vi.fn()} />
+      </Providers>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Jira" })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /refresh all documents/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("A refresh is already running. Give it a moment.")
       ).toBeInTheDocument();
     });
   });

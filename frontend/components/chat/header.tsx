@@ -17,6 +17,9 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
   const [isDark, setIsDark] = useState(false);
   const [sqlLogOpen, setSqlLogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The settings API answers only on the backend's own machine, so another
+  // machine on the network gets no gear. Read after mount (no window in SSR).
+  const [isLocalPage, setIsLocalPage] = useState(false);
 
   useEffect(() => {
     // Check initial preference from document or system
@@ -29,6 +32,9 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
     if (isDarkMode) {
       document.documentElement.classList.add("dark");
     }
+    setIsLocalPage(
+      ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)
+    );
   }, []);
 
   const toggleTheme = () => {
@@ -50,7 +56,7 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
   });
 
   const isHealthy = health?.db === "ok" && health?.ollama === "ok";
-  const showSettings = health?.settings_ui_enabled !== false;
+  const showSettings = health?.settings_ui_enabled === true && isLocalPage;
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-4">

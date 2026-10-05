@@ -11,6 +11,11 @@ from httpx import ASGITransport, AsyncClient
 from app.config import Settings
 from app.main import app
 
+# How the frontend reaches the settings routes: straight to the backend on
+# loopback, carrying the custom header the CSRF guard requires.
+LOCAL_URL = "http://127.0.0.1:8000"
+SETTINGS_HEADERS = {"X-Requested-With": "natural-to-sql"}
+
 
 @pytest.mark.asyncio
 async def test_settings_api_disabled_returns_404() -> None:
@@ -21,7 +26,9 @@ async def test_settings_api_disabled_returns_404() -> None:
     )
     transport = ASGITransport(app=app)
     with patch("app.api.settings.get_settings", return_value=disabled_settings):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp1 = await client.get("/api/settings/sources")
             assert resp1.status_code == 404
             assert resp1.json()["detail"] == "Settings UI is disabled"
@@ -63,7 +70,9 @@ async def test_settings_api_non_localhost_returns_403() -> None:
     # Simulate client connecting from remote IP
     transport = ASGITransport(app=app, client=("192.168.1.55", 54321))
     with patch("app.api.settings.get_settings", return_value=enabled_settings):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.get("/api/settings/sources")
             assert resp.status_code == 403
             assert "only be accessed from localhost" in resp.json()["detail"]
@@ -116,7 +125,9 @@ async def test_settings_api_localhost_get_sources_success() -> None:
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.get("/api/settings/sources")
 
     assert resp.status_code == 200
@@ -161,7 +172,9 @@ async def test_settings_api_put_jira_source_success_and_never_echoes_secret() ->
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.put(
                 "/api/settings/sources/jira",
                 json={
@@ -212,7 +225,9 @@ async def test_settings_api_put_slack_source_success_and_never_echoes_secret() -
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.put(
                 "/api/settings/sources/slack",
                 json={
@@ -249,7 +264,9 @@ async def test_settings_api_test_source_endpoints() -> None:
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.post(
                 "/api/settings/sources/jira/test",
                 json={"base_url": "https://jira.com", "api_token": "secret"},
@@ -265,7 +282,9 @@ async def test_settings_api_test_source_endpoints() -> None:
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp_unknown = await client.post("/api/settings/sources/notfound/test")
             assert resp_unknown.status_code == 404
 
@@ -287,7 +306,9 @@ async def test_settings_api_delete_source_success() -> None:
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.delete("/api/settings/sources/jira")
             assert resp.status_code == 204
 
@@ -316,7 +337,9 @@ async def test_settings_api_refresh_success() -> None:
         patch("app.api.settings.get_settings", return_value=enabled_settings),
         patch("app.integrations.knowledge_bot.get_settings", return_value=enabled_settings),
     ):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             resp = await client.post("/api/settings/refresh?full=true")
 
     assert resp.status_code == 200
@@ -336,7 +359,9 @@ async def test_settings_api_422_never_echoes_secret_input() -> None:
 
     transport = ASGITransport(app=app)
     with patch("app.api.settings.get_settings", return_value=enabled_settings):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
             # Send invalid body: base_url is invalid type (integer), but has api_token
             resp = await client.put(
                 "/api/settings/sources/jira",
@@ -356,3 +381,114 @@ async def test_settings_api_422_never_echoes_secret_input() -> None:
     # Confirm "input" field is not included in the error items
     for err in data["detail"]:
         assert "input" not in err
+
+
+def _enabled_settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        ENABLE_SETTINGS_UI=True,
+        KNOWLEDGE_BOT_URL="http://127.0.0.1:8100",
+        KNOWLEDGE_BOT_ADMIN_KEY="admin_key",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "headers",
+    [
+        # What the Next.js /api rewrite adds to every request it proxies; a
+        # proxied request reaches us from 127.0.0.1 whoever sent it.
+        {"X-Forwarded-Host": "192.168.1.55:3000"},
+        # A remote client claiming to be local.
+        {"X-Forwarded-For": "127.0.0.1"},
+        {"Forwarded": "for=127.0.0.1"},
+        {"X-Real-IP": "127.0.0.1"},
+    ],
+)
+async def test_settings_api_rejects_proxied_requests(headers: dict[str, str]) -> None:
+    """A request that went through any proxy is refused, even from loopback."""
+    transport = ASGITransport(app=app, client=("127.0.0.1", 54321))
+    with patch("app.api.settings.get_settings", return_value=_enabled_settings()):
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
+            resp = await client.get("/api/settings/sources", headers=headers)
+
+    assert resp.status_code == 403
+    assert "only be accessed from localhost" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_settings_api_rejects_foreign_host_header() -> None:
+    """DNS rebinding: loopback peer, but the page's own hostname in Host."""
+    transport = ASGITransport(app=app, client=("127.0.0.1", 54321))
+    with patch("app.api.settings.get_settings", return_value=_enabled_settings()):
+        async with AsyncClient(
+            transport=transport, base_url="http://evil.example:8000", headers=SETTINGS_HEADERS
+        ) as client:
+            resp = await client.get("/api/settings/sources")
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_settings_api_rejects_missing_client_header() -> None:
+    """Without X-Requested-With a cross-site 'simple' POST is refused (CSRF)."""
+    transport = ASGITransport(app=app, client=("127.0.0.1", 54321))
+    with patch("app.api.settings.get_settings", return_value=_enabled_settings()):
+        async with AsyncClient(transport=transport, base_url=LOCAL_URL) as client:
+            resp = await client.post(
+                "/api/settings/refresh", headers={"Content-Type": "text/plain"}
+            )
+
+    assert resp.status_code == 403
+    assert "X-Requested-With" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    ("client_host", "base_url"),
+    [
+        ("::1", "http://[::1]:8000"),
+        ("::ffff:127.0.0.1", "http://localhost:8000"),
+        ("127.0.0.5", LOCAL_URL),
+    ],
+)
+async def test_settings_api_accepts_every_loopback_form(client_host: str, base_url: str) -> None:
+    """IPv6 loopback and IPv4-mapped loopback count as local."""
+    respx.get("http://127.0.0.1:8100/admin/sources").respond(200, json={"sources": []})
+    settings = _enabled_settings()
+    transport = ASGITransport(app=app, client=(client_host, 54321))
+    with (
+        patch("app.api.settings.get_settings", return_value=settings),
+        patch("app.integrations.knowledge_bot.get_settings", return_value=settings),
+    ):
+        async with AsyncClient(
+            transport=transport, base_url=base_url, headers=SETTINGS_HEADERS
+        ) as client:
+            resp = await client.get("/api/settings/sources")
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_settings_api_refresh_busy_passes_409_through() -> None:
+    """A refresh already running is a 409 with knowledge-bot's message, not a 502."""
+    respx.post("http://127.0.0.1:8100/admin/refresh").respond(
+        409, json={"detail": "A refresh is already running. Give it a moment."}
+    )
+    settings = _enabled_settings()
+    transport = ASGITransport(app=app)
+    with (
+        patch("app.api.settings.get_settings", return_value=settings),
+        patch("app.integrations.knowledge_bot.get_settings", return_value=settings),
+    ):
+        async with AsyncClient(
+            transport=transport, base_url=LOCAL_URL, headers=SETTINGS_HEADERS
+        ) as client:
+            resp = await client.post("/api/settings/refresh")
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "A refresh is already running. Give it a moment."

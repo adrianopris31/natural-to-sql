@@ -413,3 +413,32 @@ async def test_admin_key_never_leaks_in_logs_or_errors(caplog: pytest.LogCapture
         assert secret_token not in record.message
         assert secret_admin_key not in str(record.__dict__)
         assert secret_token not in str(record.__dict__)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_trigger_refresh_uses_refresh_timeout() -> None:
+    """knowledge-bot answers /admin/refresh only when the fetch is done, so the
+    call must not be cut off at the ordinary KNOWLEDGE_BOT_TIMEOUT_SEC."""
+    settings = Settings(
+        _env_file=None,
+        KNOWLEDGE_BOT_URL="http://127.0.0.1:8100",
+        KNOWLEDGE_BOT_ADMIN_KEY="admin_key",
+        KNOWLEDGE_BOT_TIMEOUT_SEC=5.0,
+        KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC=777.0,
+    )
+    respx.post("http://127.0.0.1:8100/admin/refresh").respond(200, json={"ok": True})
+    seen: list[object] = []
+    real_client = httpx.AsyncClient
+
+    def recording_client(*args: object, **kwargs: object) -> httpx.AsyncClient:
+        seen.append(kwargs.get("timeout"))
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    with (
+        patch("app.integrations.knowledge_bot.get_settings", return_value=settings),
+        patch("app.integrations.knowledge_bot.httpx.AsyncClient", side_effect=recording_client),
+    ):
+        await trigger_refresh()
+
+    assert seen == [777.0]

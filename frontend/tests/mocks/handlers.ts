@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { SETTINGS_API_BASE } from "@/lib/api";
 import {
   CompactSchema,
   ConversationDetail,
@@ -95,6 +96,7 @@ export const mockHealth: HealthResponse = {
     configured: true,
     reachable: true,
   },
+  settings_ui_enabled: true,
 };
 
 export function mockPreviewQuery(
@@ -190,6 +192,13 @@ export const mockSources: SourceItem[] = [
     last_status: "Indexed 45 threads",
   },
 ];
+
+const initialSources: SourceItem[] = structuredClone(mockSources);
+
+/** Undo what save/delete handlers did to mockSources, so tests stay independent. */
+export function resetMockSources(): void {
+  mockSources.splice(0, mockSources.length, ...structuredClone(initialSources));
+}
 
 export const lastSavedJira: { body: JiraSourceForm | null } = { body: null };
 export const lastSavedSlack: { body: SlackSourceForm | null } = { body: null };
@@ -457,11 +466,11 @@ export const handlers = [
   }),
 
   // Settings endpoints
-  http.get("/api/settings/sources", () => {
+  http.get(`${SETTINGS_API_BASE}/settings/sources`, () => {
     return HttpResponse.json({ sources: mockSources });
   }),
 
-  http.put("/api/settings/sources/jira", async ({ request }) => {
+  http.put(`${SETTINGS_API_BASE}/settings/sources/jira`, async ({ request }) => {
     const body = (await request.json()) as JiraSourceForm;
     lastSavedJira.body = body;
     const jiraItem = mockSources.find((s) => s.source === "jira");
@@ -494,7 +503,7 @@ export const handlers = [
     });
   }),
 
-  http.put("/api/settings/sources/slack", async ({ request }) => {
+  http.put(`${SETTINGS_API_BASE}/settings/sources/slack`, async ({ request }) => {
     const body = (await request.json()) as SlackSourceForm;
     lastSavedSlack.body = body;
     const slackItem = mockSources.find((s) => s.source === "slack");
@@ -523,7 +532,7 @@ export const handlers = [
     });
   }),
 
-  http.post("/api/settings/sources/:source/test", async ({ params, request }) => {
+  http.post(`${SETTINGS_API_BASE}/settings/sources/:source/test`, async ({ params, request }) => {
     const source = String(params.source);
     let body: unknown = null;
     try {
@@ -539,7 +548,7 @@ export const handlers = [
     });
   }),
 
-  http.delete("/api/settings/sources/:source", ({ params }) => {
+  http.delete(`${SETTINGS_API_BASE}/settings/sources/:source`, ({ params }) => {
     const source = String(params.source);
     lastDeletedSource.source = source;
     const item = mockSources.find((s) => s.source === source);
@@ -551,10 +560,9 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
-  http.post("/api/settings/refresh", () => {
+  http.post(`${SETTINGS_API_BASE}/settings/refresh`, () => {
     refreshDocumentsCalled.count += 1;
-    return HttpResponse.json({
-      message: "Knowledge base documents re-indexed successfully.",
-    });
+    // knowledge-bot's real shape: it answers once the fetch is done.
+    return HttpResponse.json({ ok: true, documents: 42, full: false });
   }),
 ];

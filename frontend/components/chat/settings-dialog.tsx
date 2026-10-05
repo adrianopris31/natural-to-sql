@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  apiErrorMessage,
   deleteSource,
   fetchSources,
   refreshDocuments,
@@ -32,6 +33,24 @@ import {
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
+}
+
+/** scheme://host[:port], lowercased: the site a Jira token is sent to. */
+function jiraSite(url: string): string {
+  try {
+    const parsed = new URL(url.trim());
+    return `${parsed.protocol}//${parsed.host}`.toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+/**
+ * What a card's form is seeded from. Leaves out last_refresh and last_status,
+ * so a refresh re-fetching the list does not wipe unsaved edits.
+ */
+function formKey(item: SourceItem): string {
+  return JSON.stringify([item.origin, item.configured, item.fields]);
 }
 
 function OriginBadge({ origin }: { origin: SourceOrigin }) {
@@ -90,7 +109,15 @@ function JiraCard({
       : ""
   );
   const [apiToken, setApiToken] = useState("");
-  const [isReplacing, setIsReplacing] = useState(!sourceItem.configured);
+  // Only a STORED token can be kept by leaving the field empty. A token from
+  // .env is never copied into storage, so saving one needs a token typed here.
+  const isStored = sourceItem.origin === "stored";
+  const [isReplacing, setIsReplacing] = useState(!isStored);
+  // knowledge-bot reuses a stored token only for the site it was saved for.
+  const siteChanged =
+    isStored &&
+    jiraSite(baseUrl) !== jiraSite((sourceItem.fields.base_url as string) || "");
+  const showTokenInput = isReplacing || siteChanged;
 
   const [testResult, setTestResult] = useState<SourceTestResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -115,8 +142,10 @@ function JiraCard({
         : ""
     );
     setApiToken("");
-    setIsReplacing(!sourceItem.configured);
-  }, [sourceItem]);
+    setIsReplacing(sourceItem.origin !== "stored");
+    // Re-seed only when the saved values change, not on every re-fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formKey(sourceItem)]);
 
   const handleTest = async () => {
     setIsTesting(true);
@@ -131,7 +160,7 @@ function JiraCard({
         jql: jql.trim() || undefined,
         max_issues: maxIssues ? Number(maxIssues) : undefined,
       };
-      if (isReplacing && apiToken.trim()) {
+      if (showTokenInput && apiToken.trim()) {
         payload.api_token = apiToken.trim();
       }
       const res = await testSource("jira", payload);
@@ -139,7 +168,7 @@ function JiraCard({
     } catch (err) {
       setTestResult({
         ok: false,
-        message: err instanceof Error ? err.message : "Test request failed",
+        message: apiErrorMessage(err, "Test request failed"),
       });
     } finally {
       setIsTesting(false);
@@ -162,7 +191,7 @@ function JiraCard({
         jql: jql.trim() || undefined,
         max_issues: maxIssues ? Number(maxIssues) : undefined,
       };
-      if (isReplacing && apiToken.trim()) {
+      if (showTokenInput && apiToken.trim()) {
         payload.api_token = apiToken.trim();
       }
       await saveJiraSource(payload);
@@ -172,7 +201,7 @@ function JiraCard({
       onSaved();
     } catch (err) {
       setSaveError(
-        err instanceof Error ? err.message : "Failed to save Jira settings"
+        apiErrorMessage(err, "Failed to save Jira settings")
       );
     } finally {
       setIsSaving(false);
@@ -187,7 +216,7 @@ function JiraCard({
       onSaved();
     } catch (err) {
       setSaveError(
-        err instanceof Error ? err.message : "Failed to disconnect Jira"
+        apiErrorMessage(err, "Failed to disconnect Jira")
       );
     } finally {
       setIsDeleting(false);
@@ -316,13 +345,13 @@ function JiraCard({
         {/* Secret Field: Write-only */}
         <div className="space-y-1">
           <label
-            htmlFor={isReplacing ? "jira_api_token" : "jira_api_token_masked"}
+            htmlFor={showTokenInput ? "jira_api_token" : "jira_api_token_masked"}
             className="flex items-center gap-1.5 text-xs font-medium text-foreground"
           >
             <KeyRound className="size-3 text-muted-foreground" />
             <span>API Token / Secret</span>
           </label>
-          {sourceItem.configured && !isReplacing ? (
+          {isStored && !showTokenInput ? (
             <div className="flex gap-2">
               <input
                 id="jira_api_token_masked"
@@ -355,7 +384,7 @@ function JiraCard({
                 name="jira_api_token"
                 type="password"
                 placeholder={
-                  sourceItem.configured
+                  isStored
                     ? "Enter new API token"
                     : "Enter API token"
                 }
@@ -363,7 +392,7 @@ function JiraCard({
                 onChange={(e) => setApiToken(e.target.value)}
                 className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
-              {sourceItem.configured && (
+              {isStored && !siteChanged && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -377,6 +406,18 @@ function JiraCard({
                 </Button>
               )}
             </div>
+          )}
+          {siteChanged && (
+            <p className="text-[11px] text-muted-foreground">
+              The base URL points at a different site, so enter the token again:
+              a saved token is never sent to a new site.
+            </p>
+          )}
+          {sourceItem.origin === "env" && (
+            <p className="text-[11px] text-muted-foreground">
+              Currently using the token from .env. Saving here stores a new
+              connection, so it needs a token.
+            </p>
           )}
         </div>
 
@@ -507,7 +548,7 @@ function JiraCard({
               )}
             </Button>
 
-            {sourceItem.configured && (
+            {isStored && (
               <Button
                 type="button"
                 variant="ghost"
@@ -565,7 +606,11 @@ function SlackCard({
       : ""
   );
   const [botToken, setBotToken] = useState("");
-  const [isReplacing, setIsReplacing] = useState(!sourceItem.configured);
+  // Only a STORED token can be kept by leaving the field empty. A token from
+  // .env is never copied into storage, so saving one needs a token typed here.
+  const isStored = sourceItem.origin === "stored";
+  const [isReplacing, setIsReplacing] = useState(!isStored);
+  const showTokenInput = isReplacing;
 
   const [testResult, setTestResult] = useState<SourceTestResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -593,8 +638,10 @@ function SlackCard({
         : ""
     );
     setBotToken("");
-    setIsReplacing(!sourceItem.configured);
-  }, [sourceItem]);
+    setIsReplacing(sourceItem.origin !== "stored");
+    // Re-seed only when the saved values change, not on every re-fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formKey(sourceItem)]);
 
   const handleTest = async () => {
     setIsTesting(true);
@@ -609,7 +656,7 @@ function SlackCard({
         days_back: daysBack ? Number(daysBack) : undefined,
         max_threads: maxThreads ? Number(maxThreads) : undefined,
       };
-      if (isReplacing && botToken.trim()) {
+      if (showTokenInput && botToken.trim()) {
         payload.bot_token = botToken.trim();
       }
       const res = await testSource("slack", payload);
@@ -617,7 +664,7 @@ function SlackCard({
     } catch (err) {
       setTestResult({
         ok: false,
-        message: err instanceof Error ? err.message : "Test request failed",
+        message: apiErrorMessage(err, "Test request failed"),
       });
     } finally {
       setIsTesting(false);
@@ -640,7 +687,7 @@ function SlackCard({
         days_back: daysBack ? Number(daysBack) : undefined,
         max_threads: maxThreads ? Number(maxThreads) : undefined,
       };
-      if (isReplacing && botToken.trim()) {
+      if (showTokenInput && botToken.trim()) {
         payload.bot_token = botToken.trim();
       }
       await saveSlackSource(payload);
@@ -650,7 +697,7 @@ function SlackCard({
       onSaved();
     } catch (err) {
       setSaveError(
-        err instanceof Error ? err.message : "Failed to save Slack settings"
+        apiErrorMessage(err, "Failed to save Slack settings")
       );
     } finally {
       setIsSaving(false);
@@ -665,7 +712,7 @@ function SlackCard({
       onSaved();
     } catch (err) {
       setSaveError(
-        err instanceof Error ? err.message : "Failed to disconnect Slack"
+        apiErrorMessage(err, "Failed to disconnect Slack")
       );
     } finally {
       setIsDeleting(false);
@@ -733,13 +780,13 @@ function SlackCard({
         {/* Secret Field: Write-only */}
         <div className="space-y-1">
           <label
-            htmlFor={isReplacing ? "slack_bot_token" : "slack_bot_token_masked"}
+            htmlFor={showTokenInput ? "slack_bot_token" : "slack_bot_token_masked"}
             className="flex items-center gap-1.5 text-xs font-medium text-foreground"
           >
             <KeyRound className="size-3 text-muted-foreground" />
             <span>Bot Token (xoxb-...)</span>
           </label>
-          {sourceItem.configured && !isReplacing ? (
+          {isStored && !showTokenInput ? (
             <div className="flex gap-2">
               <input
                 id="slack_bot_token_masked"
@@ -772,7 +819,7 @@ function SlackCard({
                 name="slack_bot_token"
                 type="password"
                 placeholder={
-                  sourceItem.configured
+                  isStored
                     ? "Enter new bot token (xoxb-...)"
                     : "Enter bot token (xoxb-...)"
                 }
@@ -780,7 +827,7 @@ function SlackCard({
                 onChange={(e) => setBotToken(e.target.value)}
                 className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
-              {sourceItem.configured && (
+              {isStored && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -794,6 +841,12 @@ function SlackCard({
                 </Button>
               )}
             </div>
+          )}
+          {sourceItem.origin === "env" && (
+            <p className="text-[11px] text-muted-foreground">
+              Currently using the token from .env. Saving here stores a new
+              connection, so it needs a token.
+            </p>
           )}
         </div>
 
@@ -907,7 +960,7 @@ function SlackCard({
               )}
             </Button>
 
-            {sourceItem.configured && (
+            {isStored && (
               <Button
                 type="button"
                 variant="ghost"
@@ -935,7 +988,6 @@ function SlackCard({
 }
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
-  const queryClient = useQueryClient();
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
@@ -985,14 +1037,18 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setIsRefreshingAll(true);
     setRefreshMessage(null);
     try {
+      // knowledge-bot answers only once the fetch is done (409 while another
+      // refresh runs), so this reports a finished refresh, not a started one.
       const res = await refreshDocuments();
-      setRefreshMessage(res.message || "Document refresh started successfully.");
-      await refetch();
-      await queryClient.invalidateQueries({ queryKey: ["settings-sources"] });
-    } catch (err) {
       setRefreshMessage(
-        err instanceof Error ? err.message : "Failed to trigger refresh"
+        res.message ||
+          (typeof res.documents === "number"
+            ? `Refresh complete: ${res.documents} documents.`
+            : "Refresh complete.")
       );
+      await refetch();
+    } catch (err) {
+      setRefreshMessage(apiErrorMessage(err, "Failed to trigger refresh"));
     } finally {
       setIsRefreshingAll(false);
     }

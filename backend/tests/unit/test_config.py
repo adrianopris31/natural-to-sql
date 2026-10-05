@@ -18,6 +18,7 @@ def test_settings_defaults() -> None:
     assert settings.KNOWLEDGE_BOT_API_KEY == ""
     assert settings.KNOWLEDGE_BOT_ADMIN_KEY == ""
     assert settings.KNOWLEDGE_BOT_TIMEOUT_SEC == 90.0
+    assert settings.KNOWLEDGE_BOT_REFRESH_TIMEOUT_SEC == 900.0
     assert settings.ENABLE_SETTINGS_UI is False
 
 

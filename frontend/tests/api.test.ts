@@ -35,6 +35,7 @@ describe("API Client (lib/api.ts)", () => {
         configured: true,
         reachable: true,
       },
+      settings_ui_enabled: true,
     });
   });
 
@@ -171,6 +172,6 @@ describe("API Client (lib/api.ts)", () => {
 
     // Refresh documents
     const refreshRes = await refreshDocuments();
-    expect(refreshRes.message).toContain("re-indexed");
+    expect(refreshRes.documents).toBe(42);
   });
 });

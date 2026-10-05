@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from typing import Any
 
@@ -25,7 +26,30 @@ from app.integrations.knowledge_bot import (
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_LOCALHOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+# Headers any reverse proxy adds. The Next.js /api rewrite always sends
+# X-Forwarded-Host, and it does NOT send X-Forwarded-For, so a proxied request
+# reaches us from 127.0.0.1 whoever made it. Settings therefore refuse every
+# proxied request; the browser calls the backend directly instead.
+PROXY_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
+
+# Sent by the frontend on every settings call. A custom header makes the browser
+# preflight cross-origin requests, so another website cannot fire a "simple"
+# POST (e.g. /refresh) at the backend: CORS rejects its origin first.
+SETTINGS_CLIENT_HEADER = "X-Requested-With"
+SETTINGS_CLIENT_VALUE = "natural-to-sql"
+
+
+def _is_loopback(host: str | None) -> bool:
+    """True for 127.0.0.0/8, ::1 and IPv4-mapped loopback (::ffff:127.0.0.1)."""
+    if not host:
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return address.is_loopback
 
 
 def require_settings_enabled() -> None:
@@ -39,19 +63,41 @@ def require_settings_enabled() -> None:
 
 
 def require_localhost(request: Request) -> None:
-    """Ensure request originates from localhost only."""
+    """Ensure the request comes straight from this machine.
+
+    Three checks: the peer is a loopback address, no proxy sat in between
+    (a proxy hides the real client), and the Host header names this machine
+    (a DNS-rebinding page has the attacker's hostname there).
+    """
     client_host = request.client.host if request.client else None
-    if not client_host or client_host not in ALLOWED_LOCALHOSTS:
+    proxied = any(header in request.headers for header in PROXY_HEADERS)
+    target = request.url.hostname
+    local_target = target == "localhost" or _is_loopback(target)
+
+    if proxied or not _is_loopback(client_host) or not local_target:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access forbidden: settings can only be accessed from localhost",
         )
 
 
+def require_settings_client(request: Request) -> None:
+    """Ensure the request carries the frontend's custom header (CSRF guard)."""
+    if request.headers.get(SETTINGS_CLIENT_HEADER) != SETTINGS_CLIENT_VALUE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access forbidden: missing {SETTINGS_CLIENT_HEADER} header",
+        )
+
+
 router = APIRouter(
     prefix="/api/settings",
     tags=["settings"],
-    dependencies=[Depends(require_settings_enabled), Depends(require_localhost)],
+    dependencies=[
+        Depends(require_settings_enabled),
+        Depends(require_localhost),
+        Depends(require_settings_client),
+    ],
 )
 
 
