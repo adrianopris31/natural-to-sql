@@ -2,12 +2,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useChat } from "@/hooks/use-chat";
 import { server } from "./mocks/server";
-import { lastRunRequest, mockConversationDetail } from "./mocks/handlers";
+import { lastChatRequest, lastRunRequest, mockConversationDetail } from "./mocks/handlers";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   server.resetHandlers();
   lastRunRequest.body = null;
+  lastChatRequest.body = null;
 });
 afterAll(() => server.close());
 
@@ -225,5 +226,66 @@ describe("useChat Hook", () => {
     expect(turn.status).toBe("done");
     expect(turn.sources).toHaveLength(0);
     expect(turn.answer).toContain("do not contain information");
+  });
+
+  it("tracks currentDatabase and sends it in chat requests", async () => {
+    const { result } = renderHook(() => useChat());
+
+    expect(result.current.currentDatabase).toBeNull();
+
+    act(() => {
+      result.current.setCurrentDatabase("analytics_db");
+    });
+    expect(result.current.currentDatabase).toBe("analytics_db");
+
+    await act(async () => {
+      await result.current.sendMessage("Count orders");
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
+
+    expect(lastChatRequest.body?.database).toBe("analytics_db");
+    expect(result.current.turns[0].database).toBe("analytics_db");
+  });
+
+  it("updates currentDatabase when loading a conversation with database set", async () => {
+    const { result } = renderHook(() => useChat());
+
+    act(() => {
+      result.current.loadConversation({
+        ...mockConversationDetail,
+        database: "analytics_db",
+      });
+    });
+
+    expect(result.current.currentDatabase).toBe("analytics_db");
+    expect(result.current.activeConversationId).toBe("conv-1");
+  });
+
+  it("switches to new conversation when database changes while in a historical conversation", async () => {
+    const { result } = renderHook(() => useChat());
+
+    // Load a conversation for default_db
+    act(() => {
+      result.current.loadConversation({
+        ...mockConversationDetail,
+        database: "default_db",
+      });
+    });
+    expect(result.current.activeConversationId).toBe("conv-1");
+    expect(result.current.currentDatabase).toBe("default_db");
+
+    // User switches to analytics_db
+    act(() => {
+      result.current.setCurrentDatabase("analytics_db");
+    });
+
+    // Sending a message without explicit convId detaches from conv-1 and uses analytics_db
+    await act(async () => {
+      await result.current.sendMessage("New query for analytics");
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
+
+    expect(lastChatRequest.body?.conversation_id).toBeUndefined();
+    expect(lastChatRequest.body?.database).toBe("analytics_db");
   });
 });

@@ -1,10 +1,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { server } from "./mocks/server";
+import { lastChatRequest } from "./mocks/handlers";
 import {
   chatStream,
+  sendChatStream,
   deleteConversation,
   fetchConversation,
   fetchConversations,
+  fetchDatabases,
   fetchHealth,
   fetchSchema,
   refreshSchema,
@@ -39,13 +42,44 @@ describe("API Client (lib/api.ts)", () => {
     });
   });
 
-  it("fetches schema and triggers refresh", async () => {
-    const schema = await fetchSchema();
-    expect(schema.tables.length).toBeGreaterThan(0);
-    expect(schema.tables[0].name).toBe("users");
+  it("fetches databases list", async () => {
+    const databases = await fetchDatabases();
+    expect(databases).toHaveLength(2);
+    expect(databases[0]).toEqual({
+      id: "default_db",
+      name: "default_db",
+      is_default: true,
+    });
+    expect(databases[1]).toEqual({
+      id: "analytics_db",
+      name: "analytics_db",
+      is_default: false,
+    });
+  });
 
-    const refresh = await refreshSchema();
-    expect(refresh.tables).toBe(schema.tables.length);
+  it("fetches schema and triggers refresh with optional database", async () => {
+    const defaultSchema = await fetchSchema();
+    expect(defaultSchema.tables.length).toBeGreaterThan(0);
+    expect(defaultSchema.tables[0].name).toBe("users");
+
+    const refreshDefault = await refreshSchema();
+    expect(refreshDefault.tables).toBe(defaultSchema.tables.length);
+
+    // Explicit database query
+    const analyticsSchema = await fetchSchema("analytics_db");
+    expect(analyticsSchema.tables).toHaveLength(1);
+    expect(analyticsSchema.tables[0].name).toBe("events");
+
+    const refreshAnalytics = await refreshSchema("analytics_db");
+    expect(refreshAnalytics.tables).toBe(1);
+  });
+
+  it("sends database parameter in chatStream and sendChatStream", async () => {
+    await chatStream("Show users", undefined, undefined, undefined, "sql", "analytics_db");
+    expect(lastChatRequest.body?.database).toBe("analytics_db");
+
+    await sendChatStream("Show events", undefined, "sql", "default_db");
+    expect(lastChatRequest.body?.database).toBe("default_db");
   });
 
   it("manages conversations (list, detail, delete)", async () => {

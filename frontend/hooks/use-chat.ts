@@ -9,6 +9,8 @@ export interface UseChatReturn {
   isStreaming: boolean;
   activeConversationId: string | undefined;
   activeStatus: TurnStatus | null;
+  currentDatabase: string | null;
+  setCurrentDatabase: (db: string | null) => void;
   sendMessage: (message: string, convId?: string, mode?: TurnKind) => Promise<void>;
   send: (message: string, mode?: TurnKind, convId?: string) => Promise<void>;
   /** Approve a previewed turn. `editedSql[i]` replaces query i (null/undefined = unchanged). */
@@ -48,6 +50,8 @@ export function useChat(initialConversationId?: string): UseChatReturn {
     initialConversationId
   );
   const [activeStatus, setActiveStatus] = useState<TurnStatus | null>(null);
+  const [currentDatabase, setCurrentDatabase] = useState<string | null>(null);
+  const loadedConversationDbRef = useRef<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -65,6 +69,7 @@ export function useChat(initialConversationId?: string): UseChatReturn {
     setTurns([]);
     setActiveConversationId(undefined);
     setActiveStatus(null);
+    loadedConversationDbRef.current = null;
   }, [stopGeneration]);
 
   const loadConversation = useCallback(
@@ -72,6 +77,12 @@ export function useChat(initialConversationId?: string): UseChatReturn {
       stopGeneration();
       setActiveConversationId(detail.id);
       setTurns(detail.turns || []);
+      if (detail.database) {
+        setCurrentDatabase(detail.database);
+        loadedConversationDbRef.current = detail.database;
+      } else {
+        loadedConversationDbRef.current = null;
+      }
     },
     [stopGeneration]
   );
@@ -219,12 +230,25 @@ export function useChat(initialConversationId?: string): UseChatReturn {
       stopGeneration();
 
       const turnId = `turn-${Date.now()}`;
-      const conversationId = convId ?? activeConversationId;
+      let conversationId = convId ?? activeConversationId;
+      if (
+        !convId &&
+        activeConversationId &&
+        loadedConversationDbRef.current &&
+        currentDatabase &&
+        loadedConversationDbRef.current !== currentDatabase
+      ) {
+        conversationId = undefined;
+        setActiveConversationId(undefined);
+        loadedConversationDbRef.current = currentDatabase;
+      }
+
       const initialStatus: TurnStatus = mode === "docs" ? "searching_docs" : "generating_sql";
 
       const newTurn: Turn = {
         id: turnId,
         kind: mode,
+        database: currentDatabase,
         question: message.trim(),
         sql: null,
         columns: null,
@@ -244,11 +268,19 @@ export function useChat(initialConversationId?: string): UseChatReturn {
 
       await streamIntoTurn(
         turnId,
-        (onEvent, signal) => chatStream(message.trim(), conversationId, onEvent, signal, mode),
+        (onEvent, signal) =>
+          chatStream(
+            message.trim(),
+            conversationId,
+            onEvent,
+            signal,
+            mode,
+            currentDatabase ?? undefined
+          ),
         "plan"
       );
     },
-    [activeConversationId, isStreaming, stopGeneration, streamIntoTurn]
+    [activeConversationId, currentDatabase, isStreaming, stopGeneration, streamIntoTurn]
   );
 
   const send = useCallback(
@@ -305,6 +337,8 @@ export function useChat(initialConversationId?: string): UseChatReturn {
     isStreaming,
     activeConversationId,
     activeStatus,
+    currentDatabase,
+    setCurrentDatabase,
     sendMessage,
     send,
     runTurn,

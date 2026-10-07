@@ -13,6 +13,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from app.core.db import get_default_database_name, get_engine
 from app.core.intent import detect_write_request, read_only_refusal
 from app.core.table_selector import select_relevant_tables
 from app.errors import KnowledgeBotError, LLMError
@@ -53,6 +54,7 @@ async def execute_headless_query(
     mode: str = "sql",
     auto_approve: bool = True,
     conversation_id: str | None = None,
+    database: str | None = None,
     *,
     client: LLMClient,
     engine: AsyncEngine,
@@ -76,11 +78,29 @@ async def execute_headless_query(
 
     # Resolve or create conversation
     active_conv_id = conversation_id
-    if not active_conv_id or not await get_conversation(active_conv_id):
-        active_conv_id = str(uuid.uuid4())
-        await create_conversation(title=clean_question[:60], conversation_id=active_conv_id)
+    target_db = database
+    if active_conv_id:
+        existing_conv = await get_conversation(active_conv_id)
+        if existing_conv:
+            if not target_db and getattr(existing_conv, "database", None):
+                target_db = existing_conv.database
+            await touch_conversation(active_conv_id)
+        else:
+            active_conv_id = str(uuid.uuid4())
+            await create_conversation(
+                title=clean_question[:60],
+                conversation_id=active_conv_id,
+                database=target_db,
+            )
     else:
-        await touch_conversation(active_conv_id)
+        active_conv_id = str(uuid.uuid4())
+        await create_conversation(
+            title=clean_question[:60],
+            conversation_id=active_conv_id,
+            database=target_db,
+        )
+
+    resolved_db = target_db or get_default_database_name()
 
     # 1. DOCS MODE
     if mode == "docs":
@@ -145,6 +165,7 @@ async def execute_headless_query(
         status="planning",
         kind="sql",
         prompt_version=PROMPT_VERSION,
+        database=resolved_db,
     )
 
     # 2a. Upfront read-only write-intent refusal
@@ -177,7 +198,14 @@ async def execute_headless_query(
         }
 
     # 2b. Schema introspection & Table selection
-    schema = await schema_cache.get_schema()
+    if engine is None or (
+        hasattr(engine, "url")
+        and getattr(engine.url, "database", None) != resolved_db
+        and target_db is not None
+    ):
+        engine = get_engine(resolved_db)
+
+    schema = await schema_cache.get_schema(db_name=resolved_db)
     relevant_schema = select_relevant_tables(
         schema=schema, question=clean_question, settings=settings
     )
@@ -327,6 +355,14 @@ async def approve_headless_query(
         raise ValueError(f"Turn '{turn_id}' not found")
     if turn.status != AWAITING_APPROVAL:
         raise ValueError(f"Turn '{turn_id}' is not awaiting approval (status: {turn.status})")
+
+    turn_db = getattr(turn, "database", None) or get_default_database_name()
+    if engine is None or (
+        hasattr(engine, "url")
+        and getattr(engine.url, "database", None) != turn_db
+        and getattr(turn, "database", None) is not None
+    ):
+        engine = get_engine(turn_db)
 
     error_payload: dict[str, Any] | None = None
     async for raw_sse in run_approved_turn(

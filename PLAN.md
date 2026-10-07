@@ -105,8 +105,9 @@ The validator is a **pure function** (`validate(sql, schema, settings) -> SafeSQ
 | GET | `/api/conversations` | `[{id, title, updated_at}]` |
 | GET | `/api/conversations/{id}` | `{id, title, turns:[{id, question, sql, columns, rows, row_count, truncated, queries: [{index, purpose, sql, explain, columns, rows, row_count, truncated, error}] | null, answer, status, error, created_at}]}`. Status adds `awaiting_approval`, `cancelled`, `refused`. Each query has `risk: {level, flags:[{code, severity, message}]}`. |
 | DELETE | `/api/conversations/{id}` | 204 |
-| GET | `/api/schema` | the compact schema (tables, columns) for the UI sidebar |
-| POST | `/api/schema/refresh` | re-introspect → `{tables: n}` |
+| GET | `/api/databases` | list discovered and configured databases `[{id, name, is_default}]` |
+| GET | `/api/schema?database=` | the compact schema (tables, columns) for specified or default database |
+| POST | `/api/schema/refresh?database=` | re-introspect specified database → `{tables: n}` |
 | GET | `/api/health` | `{db: ok|error, ollama: ok|error, model: str, db_version: str, settings_ui_enabled: bool}` |
 | GET | `/api/settings/sources` | list Jira and Slack configured status, non-secret fields, secret_hint, and origin |
 | PUT | `/api/settings/sources/{source}` | configure Jira or Slack credentials (secrets write-only, omitted kept) |
@@ -114,13 +115,14 @@ The validator is a **pure function** (`validate(sql, schema, settings) -> SafeSQ
 | POST | `/api/settings/sources/{source}/test` | test connection with submitted payload or stored credentials |
 | POST | `/api/settings/refresh` | trigger background re-index of documents in Knowledge-Bot |
 
-Rows are stored with the turn (capped at MAX_ROWS), so reopening a conversation doesn't re-run the queries.
+Rows are stored with the turn (capped at MAX_ROWS), so reopening a conversation doesn't re-run the queries. Each conversation/turn records `database: str | null`.
 
 ---
 
 ## 6. Configuration (`.env.example`)
 ```
 TARGET_DB_URL=mysql+asyncmy://nl2sql_ro:CHANGE_ME@127.0.0.1:3306/your_db
+TARGET_DATABASES=              # optional JSON mapping of alias -> URL: {"analytics": "..."}
 APP_DB_PATH=backend/data/app.db
 SQL_LOG_PATH=backend/data/sql_log.jsonl   # JSONL audit of every SQL (git-ignored dir)
 OLLAMA_URL=http://127.0.0.1:11434
@@ -263,6 +265,30 @@ Status: ✅ = done (branch `feat/jira-slack-settings-ui`).
 - ✅ **P11.3** Frontend contract & client: added source types and forms in `frontend/lib/types.ts`; implemented API client functions in `frontend/lib/api.ts`.
 - ✅ **P11.4** Frontend UI: `frontend/components/chat/settings-dialog.tsx` with Jira/Slack cards, origin badges (`Stored`, `From .env`, `Not set`), last refresh status, write-only secret toggle, test connection, save, refresh now, and disconnect. Header settings gear conditionally shown when `settings_ui_enabled !== false`.
 - ✅ **P11.5** Tests: unit (`tests/unit/test_settings.py`), integration (`tests/integration/test_settings_api.py`), frontend (`tests/settings-dialog.test.tsx`, updated `layout`, `api`, `mocks/handlers.ts`). 358 backend + 79 frontend tests passing.
+
+### Phase 12 — Dynamic Multi-Database Switching (P10.7 Roadmap) (added 2026-10-07)
+Status: ✅ = done (branch `feat/dynamic-db-switching`).
+- ✅ **P12.1** Engine & Schema Multi-Tenant Manager (`app/core/db.py`, `app/core/schema.py`):
+  - Support multi-engine lifecycle management via `get_engine(db_name: str | None = None)` with engine pooling and discovery from MySQL server (`SHOW DATABASES` filtering out system schemas) and optional `TARGET_DATABASES` env mapping.
+  - Multi-database schema caching in `SchemaCache` keyed by database name.
+- ✅ **P12.2** Storage & Conversation State (`app/store/models.py`, `app/store/database.py`):
+  - Add `database` column to `conversations` and `turns` models with SQLite auto-migrations.
+- ✅ **P12.3** Backend Endpoints & Query Pipelines:
+  - Add `GET /api/databases` in `app/api/databases.py`.
+  - Accept `database` query parameter in `/api/schema` and `/api/schema/refresh`.
+  - Accept `database` in `POST /api/chat` and `POST /v1/query`, propagating database engine and schema through `process_chat`, `run_approved_turn`, and `execute_headless_query`.
+- ✅ **P12.4** Frontend Contract & API Client (`frontend/lib/types.ts`, `frontend/lib/api.ts`):
+  - Add `DatabaseItem` type, update `ChatRequest`, `Conversation`, `Turn` with `database?: string`.
+  - Add `fetchDatabases()`, update `fetchSchema(database?)` and `refreshSchema(database?)`.
+- ✅ **P12.5** Frontend UI & State (`frontend/hooks/use-chat.ts`, `components/chat/`):
+  - Add Database Switcher dropdown in UI (header/sidebar) to switch active database.
+  - Synchronize Schema Browser and chat requests with selected database.
+  - Automatically restore active database when opening historical conversations.
+- ✅ **P12.6** Verification & Quality Gates:
+  - Unit tests for engine manager, schema multi-cache, and database discovery.
+  - Integration tests for multi-database chat pipeline and API query execution.
+  - Frontend component tests for Database Switcher and state changes.
+  - Full suite verification (`make lint`, `make test`).
 
 ---
 

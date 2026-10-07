@@ -12,6 +12,8 @@ interface SidebarProps {
   activeConversationId?: string;
   onSelectConversation: (id: string) => void;
   onNewChat: () => void;
+  currentDatabase?: string | null;
+  onSelectDatabase?: (databaseId: string) => void;
   className?: string;
 }
 
@@ -19,6 +21,7 @@ export function Sidebar({
   activeConversationId,
   onSelectConversation,
   onNewChat,
+  currentDatabase,
   className,
 }: SidebarProps) {
   const queryClient = useQueryClient();
@@ -139,7 +142,7 @@ export function Sidebar({
       </div>
 
       {/* Schema Browser Section */}
-      <SchemaBrowser />
+      <SchemaBrowser currentDatabase={currentDatabase} />
     </aside>
   );
 }

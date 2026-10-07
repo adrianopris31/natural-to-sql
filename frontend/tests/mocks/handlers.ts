@@ -1,11 +1,13 @@
 import { http, HttpResponse } from "msw";
 import { SETTINGS_API_BASE } from "@/lib/api";
 import {
+  AuditEntry,
+  ChatRequest,
   CompactSchema,
   ConversationDetail,
   ConversationSummary,
+  DatabaseItem,
   HealthResponse,
-  AuditEntry,
   RiskReport,
   RunRequest,
   TurnQuery,
@@ -14,24 +16,32 @@ import {
   SlackSourceForm,
 } from "@/lib/types";
 
+export const mockDatabases: DatabaseItem[] = [
+  { id: "default_db", name: "default_db", is_default: true },
+  { id: "analytics_db", name: "analytics_db", is_default: false },
+];
+
 export const mockConversations: ConversationSummary[] = [
   {
     id: "conv-1",
     title: "Top 10 users by total spend",
     updated_at: "2026-09-28T12:00:00Z",
     last_kind: "sql",
+    database: "default_db",
   },
   {
     id: "conv-2",
     title: "Monthly revenue in 2025",
     updated_at: "2026-09-28T14:30:00Z",
     last_kind: "docs",
+    database: null,
   },
 ];
 
 export const mockConversationDetail: ConversationDetail = {
   id: "conv-1",
   title: "Top 10 users by total spend",
+  database: "default_db",
   turns: [
     {
       id: "turn-1",
@@ -212,6 +222,9 @@ export const refreshDocumentsCalled = { count: 0 };
 /** Last body received by the /run mock, for assertions. */
 export const lastRunRequest: { body: RunRequest | null } = { body: null };
 
+/** Last body received by the /chat mock, for assertions. */
+export const lastChatRequest: { body: ChatRequest | null } = { body: null };
+
 function sseResponse(chunks: string[]): HttpResponse<ReadableStream<Uint8Array>> {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -229,12 +242,39 @@ export const handlers = [
     return HttpResponse.json(mockHealth);
   }),
 
+  // Databases
+  http.get("/api/databases", () => {
+    return HttpResponse.json(mockDatabases);
+  }),
+
   // Schema
-  http.get("/api/schema", () => {
+  http.get("/api/schema", ({ request }) => {
+    const url = new URL(request.url);
+    const db = url.searchParams.get("database");
+    if (db === "analytics_db") {
+      return HttpResponse.json({
+        tables: [
+          {
+            name: "events",
+            comment: "Analytics events",
+            columns: [
+              { name: "id", type: "int", is_pk: true },
+              { name: "event_name", type: "varchar(100)" },
+              { name: "timestamp", type: "timestamp" },
+            ],
+          },
+        ],
+      });
+    }
     return HttpResponse.json(mockSchema);
   }),
 
-  http.post("/api/schema/refresh", () => {
+  http.post("/api/schema/refresh", ({ request }) => {
+    const url = new URL(request.url);
+    const db = url.searchParams.get("database");
+    if (db === "analytics_db") {
+      return HttpResponse.json({ tables: 1 });
+    }
     return HttpResponse.json({ tables: mockSchema.tables.length });
   }),
 
@@ -257,11 +297,8 @@ export const handlers = [
 
   // Chat SSE Stream
   http.post("/api/chat", async ({ request }) => {
-    const body = (await request.json()) as {
-      message?: string;
-      conversation_id?: string;
-      mode?: "sql" | "docs";
-    };
+    const body = (await request.json()) as ChatRequest;
+    lastChatRequest.body = body;
     const message = body.message || "";
     const conversationId = body.conversation_id || "conv-mock-123";
     const mode = body.mode || "sql";

@@ -39,6 +39,8 @@ _MIGRATIONS: list[tuple[str, str, str]] = [
     ("audit_log", "elapsed_ms", "FLOAT"),
     ("turns", "kind", "VARCHAR(16) NOT NULL DEFAULT 'sql'"),
     ("turns", "sources_json", "TEXT"),
+    ("conversations", "database", "VARCHAR(64)"),
+    ("turns", "database", "VARCHAR(64)"),
 ]
 
 
@@ -107,10 +109,14 @@ async def get_app_session() -> AsyncIterator[AsyncSession]:
 # --- CRUD Repositories ---
 
 
-async def create_conversation(title: str, conversation_id: str | None = None) -> Conversation:
+async def create_conversation(
+    title: str,
+    conversation_id: str | None = None,
+    database: str | None = None,
+) -> Conversation:
     """Create a new conversation."""
     async with get_app_session() as session:
-        conv = Conversation(title=title)
+        conv = Conversation(title=title, database=database)
         if conversation_id:
             conv.id = conversation_id
         session.add(conv)
@@ -168,6 +174,7 @@ async def create_turn(
     turn_id: str | None = None,
     prompt_version: str = "v1.0",
     kind: str = "sql",
+    database: str | None = None,
 ) -> Turn:
     """Create a new conversation turn."""
     async with get_app_session() as session:
@@ -177,6 +184,7 @@ async def create_turn(
             status=status,
             prompt_version=prompt_version,
             kind=kind,
+            database=database,
         )
         if turn_id:
             turn.id = turn_id

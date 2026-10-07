@@ -7,20 +7,24 @@ import { CompactTable } from "@/lib/types";
 import { ChevronDown, ChevronRight, Database, Key, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function SchemaBrowser() {
+interface SchemaBrowserProps {
+  currentDatabase?: string | null;
+}
+
+export function SchemaBrowser({ currentDatabase }: SchemaBrowserProps = {}) {
   const queryClient = useQueryClient();
   const [isSectionOpen, setIsSectionOpen] = useState(true);
   const [expandedTables, setExpandedTables] = useState<Record<string, boolean>>({});
 
   const { data: schema, isLoading, error } = useQuery({
-    queryKey: ["schema"],
-    queryFn: fetchSchema,
+    queryKey: ["schema", currentDatabase],
+    queryFn: () => fetchSchema(currentDatabase ?? undefined),
   });
 
   const refreshMutation = useMutation({
-    mutationFn: refreshSchema,
+    mutationFn: () => refreshSchema(currentDatabase ?? undefined),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["schema"] });
+      queryClient.invalidateQueries({ queryKey: ["schema", currentDatabase] });
     },
   });
 
@@ -38,13 +42,18 @@ export function SchemaBrowser() {
         <button
           type="button"
           onClick={() => setIsSectionOpen((prev) => !prev)}
-          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground truncate"
           aria-expanded={isSectionOpen}
           aria-controls="schema-browser-content"
         >
-          {isSectionOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-          <Database className="size-3.5" />
-          <span>Database Schema</span>
+          {isSectionOpen ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
+          <Database className="size-3.5 shrink-0" />
+          <span className="truncate">Schema</span>
+          {currentDatabase && (
+            <span className="text-[10px] text-muted-foreground font-mono normal-case truncate max-w-[80px]" title={currentDatabase}>
+              ({currentDatabase})
+            </span>
+          )}
         </button>
 
         <Button

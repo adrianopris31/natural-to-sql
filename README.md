@@ -6,7 +6,7 @@
 [![MySQL 9.0](https://img.shields.io/badge/MySQL-9.0-4479A1.svg?style=flat&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Ollama](https://img.shields.io/badge/Ollama-qwen2.5--coder:7b-black.svg)](https://ollama.com/)
 [![Security Suite](https://img.shields.io/badge/security%20corpus-100%25%20rejected-success.svg)](backend/tests/security/)
-[![Tests](https://img.shields.io/badge/tests-453%20passed-brightgreen.svg)](#testing--verification)
+[![Tests](https://img.shields.io/badge/tests-477%20passed-brightgreen.svg)](#testing--verification)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-grade, local-first **Natural Language to SQL** analytics assistant. Ask questions about your business data in plain English and receive safe, validated MySQL queries, detailed query execution plans, interactive data tables, and grounded conversational answers—**with zero cloud data leakage**.
@@ -40,6 +40,7 @@ Built for **MySQL 9.0 / 8.0+**, powered by native **Ollama (`qwen2.5-coder:7b`)*
 ## ✨ Key Features
 
 - 🛡️ **14-Layer Defense-in-Depth Security**: AST parsing (`sqlglot`), statement allowlists, prohibited function checks, catalog restriction, strict row limits, and non-bypassable `START TRANSACTION READ ONLY` enforcement.
+- 🔀 **Dynamic Multi-Database Switching**: Switch between multiple MySQL databases directly from the UI header or sidebar. Automatically discovers databases via `SHOW DATABASES`, maintains per-database connection pools and schema caches, and restores database context on conversation reload.
 - 👁️ **Human-in-the-Loop Preview & Approval**: Generated SQL is **never executed automatically**. Review the proposed query, inspect its estimated cost and row counts, edit the query if desired, or cancel.
 - ⚡ **MySQL `EXPLAIN FORMAT=JSON` Gate**: Every query is cost-analyzed prior to preview and prior to execution. Queries exceeding cost or row thresholds are automatically blocked from execution.
 - 📚 **Unified Knowledge-Bot Integration (Jira / Slack / Docs)**: Seamlessly switch between structured SQL data queries and unstructured team documentation, Jira issues, and Slack threads with direct source citation links.
@@ -753,7 +754,8 @@ Restart the application (`make dev` or `make docker-up`). The application will:
 
 | Variable | Default Value | Description |
 |---|---|---|
-| `TARGET_DB_URL` | `mysql+asyncmy://...` | Connection URI for the target database using `asyncmy`. |
+| `TARGET_DB_URL` | `mysql+asyncmy://...` | Connection URI for the default target database using `asyncmy`. |
+| `TARGET_DATABASES` | `"{}"` | Optional JSON mapping of database aliases to connection URIs (e.g. `{"analytics": "..."}`). |
 | `APP_DB_PATH` | `backend/data/app.db` | Path to internal SQLite DB for conversations & audit storage. |
 | `SQL_LOG_PATH` | `backend/data/sql_log.jsonl` | Path to JSON Lines file mirroring all SQL audit events. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | HTTP endpoint of the Ollama server. |

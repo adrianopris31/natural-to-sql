@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     )
 
     TARGET_DB_URL: str = "mysql+asyncmy://nl2sql_ro:nl2sql_ro_pass@127.0.0.1:3307/ecommerce"
+    TARGET_DATABASES: str = "{}"
     APP_DB_PATH: str = "backend/data/app.db"
     # JSONL mirror of the audit log: every generated/edited/executed SQL (git-ignored dir)
     SQL_LOG_PATH: str = "backend/data/sql_log.jsonl"
@@ -68,6 +69,37 @@ class Settings(BaseSettings):
                     encoded_password = urllib.parse.quote(password)
                     return f"{prefix}{user}:{encoded_password}@{rest}"
         return str(value)
+
+    @field_validator("TARGET_DATABASES", mode="before")
+    @classmethod
+    def serialize_target_databases(cls, value: Any) -> str:
+        """Ensure TARGET_DATABASES is stored as a JSON string."""
+        import json
+
+        if isinstance(value, dict):
+            return json.dumps(value)
+        if isinstance(value, str):
+            return value.strip() or "{}"
+        return "{}"
+
+    @property
+    def target_databases_dict(self) -> dict[str, str]:
+        """Parse TARGET_DATABASES JSON string into a dict of alias -> URL."""
+        import json
+
+        if not self.TARGET_DATABASES or not self.TARGET_DATABASES.strip():
+            return {}
+        try:
+            parsed = json.loads(self.TARGET_DATABASES)
+            if isinstance(parsed, dict):
+                return {
+                    str(k).strip(): self.sanitize_target_db_url(str(v).strip())
+                    for k, v in parsed.items()
+                    if str(k).strip() and str(v).strip()
+                }
+        except Exception:
+            pass
+        return {}
 
     @field_validator("APP_DB_PATH", "SQL_LOG_PATH", mode="after")
     @classmethod

@@ -17,6 +17,7 @@ from app.services.query import (
     cancel_headless_query,
     execute_headless_query,
 )
+from app.store.database import get_turn
 
 router = APIRouter(prefix="/v1", tags=["v1-query"])
 
@@ -33,6 +34,7 @@ class QueryRequest(BaseModel):
     conversation_id: str | None = Field(
         None, description="Optional thread/conversation ID for conversational context"
     )
+    database: str | None = Field(None, description="Optional target database name/alias")
 
 
 class ApproveRequest(BaseModel):
@@ -67,8 +69,9 @@ async def post_query(
             mode=request.mode,
             auto_approve=request.auto_approve,
             conversation_id=request.conversation_id,
+            database=request.database,
             client=client,
-            engine=get_engine(),
+            engine=get_engine(request.database),
             schema_cache=schema_cache,
             settings=settings,
         )
@@ -93,12 +96,14 @@ async def post_query_approve(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, Any]:
     """Execute an approved headless query after inspection or edits."""
+    turn = await get_turn(turn_id)
+    turn_db = getattr(turn, "database", None) if turn else None
     try:
         return await approve_headless_query(
             turn_id=turn_id,
             sql_overrides=request.queries,
             client=client,
-            engine=get_engine(),
+            engine=get_engine(turn_db),
             schema_cache=schema_cache,
             settings=settings,
         )

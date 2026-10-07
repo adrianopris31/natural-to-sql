@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import sqlglot
 
+from app.core.db import get_default_database_name, get_engine
 from app.core.executor import run as run_sql
 from app.core.explain import ExplainSummary
 from app.core.explain import explain as explain_sql
@@ -272,9 +273,10 @@ async def process_chat(
     message: str,
     conversation_id: str | None,
     client: LLMClient,
-    engine: AsyncEngine,
-    schema_cache: SchemaCache,
-    settings: Settings,
+    engine: AsyncEngine | None = None,
+    schema_cache: SchemaCache | None = None,
+    settings: Settings | None = None,
+    database: str | None = None,
 ) -> AsyncIterator[str]:
     """Phase 1: plan queries and stream a preview for approval. Never executes SQL."""
     t0 = time.perf_counter()
@@ -286,9 +288,28 @@ async def process_chat(
         return
 
     active_conv_id = conversation_id
-    if not active_conv_id or not await get_conversation(active_conv_id):
+    target_db = database
+    if active_conv_id:
+        existing_conv = await get_conversation(active_conv_id)
+        if existing_conv:
+            if not target_db and getattr(existing_conv, "database", None):
+                target_db = existing_conv.database
+        else:
+            active_conv_id = str(uuid.uuid4())
+            await create_conversation(
+                title=clean_message[:60],
+                conversation_id=active_conv_id,
+                database=target_db,
+            )
+    else:
         active_conv_id = str(uuid.uuid4())
-        await create_conversation(title=clean_message[:60], conversation_id=active_conv_id)
+        await create_conversation(
+            title=clean_message[:60],
+            conversation_id=active_conv_id,
+            database=target_db,
+        )
+
+    resolved_db = target_db or get_default_database_name()
 
     turn_id = str(uuid.uuid4())
     await create_turn(
@@ -297,7 +318,30 @@ async def process_chat(
         turn_id=turn_id,
         status="generating_sql",
         prompt_version=PROMPT_VERSION,
+        database=resolved_db,
     )
+
+    if settings is None:
+        from app.config import get_settings
+
+        settings = get_settings()
+    if schema_cache is None:
+        from app.core.schema import get_schema_cache
+
+        schema_cache = get_schema_cache()
+
+    if engine is None or (
+        hasattr(engine, "url")
+        and getattr(engine.url, "database", None) != resolved_db
+        and target_db is not None
+    ):
+        try:
+            engine = get_engine(resolved_db)
+        except ValueError as val_err:
+            err_msg = str(val_err)
+            await update_turn(turn_id, status="error", error=err_msg)
+            yield format_sse("error", {"message": err_msg, "code": "INVALID_DATABASE"})
+            return
 
     try:
         # The app is read-only: refuse obvious data-changing requests before calling the LLM.
@@ -322,7 +366,14 @@ async def process_chat(
             if t.id != turn_id and t.sql and t.status == "done"
         ]
 
-        schema = await schema_cache.get_schema()
+        try:
+            schema = await schema_cache.get_schema(db_name=resolved_db)
+        except Exception as exc:
+            err_msg = f"Failed to introspect schema for database '{resolved_db}': {exc}"
+            await update_turn(turn_id, status="error", error=err_msg)
+            yield format_sse("error", {"message": err_msg, "code": "SCHEMA_ERROR"})
+            return
+
         schema = select_relevant_tables(schema=schema, question=clean_message, settings=settings)
 
         t_gen_start = time.perf_counter()
@@ -430,9 +481,9 @@ async def run_approved_turn(
     turn_id: str,
     sql_overrides: list[str | None] | None,
     client: LLMClient,
-    engine: AsyncEngine,
-    schema_cache: SchemaCache,
-    settings: Settings,
+    engine: AsyncEngine | None = None,
+    schema_cache: SchemaCache | None = None,
+    settings: Settings | None = None,
 ) -> AsyncIterator[str]:
     """Phase 2: execute the previewed (or user-edited) queries after explicit approval."""
     t0 = time.perf_counter()
@@ -460,10 +511,42 @@ async def run_approved_turn(
         )
         return
 
+    if settings is None:
+        from app.config import get_settings
+
+        settings = get_settings()
+    if schema_cache is None:
+        from app.core.schema import get_schema_cache
+
+        schema_cache = get_schema_cache()
+
     try:
         # Re-check everything right before execution: validation (which also produces the
         # SafeSQL the executor requires) and the EXPLAIN gate. Edited SQL gets no LLM repair.
-        schema = await schema_cache.get_schema()
+        turn_db = getattr(turn, "database", None) or get_default_database_name()
+        if engine is None or (
+            hasattr(engine, "url")
+            and getattr(engine.url, "database", None) != turn_db
+            and getattr(turn, "database", None) is not None
+        ):
+            try:
+                engine = get_engine(turn_db)
+            except ValueError as val_err:
+                yield format_sse("error", {"message": str(val_err), "code": "INVALID_DATABASE"})
+                return
+
+        try:
+            schema = await schema_cache.get_schema(db_name=turn_db)
+        except Exception as exc:
+            yield format_sse(
+                "error",
+                {
+                    "message": f"Failed to introspect schema for '{turn_db}': {exc}",
+                    "code": "SCHEMA_ERROR",
+                },
+            )
+            return
+
         approved: list[PreparedQuery] = []
         for state in states:
             index = int(state["index"])

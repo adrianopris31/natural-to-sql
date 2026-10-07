@@ -159,10 +159,17 @@ export type SSEEvent =
   | { type: "clarification"; data: SSEClarificationData }
   | { type: "error"; data: SSEErrorData };
 
+export interface DatabaseItem {
+  id: string;
+  name: string;
+  is_default: boolean;
+}
+
 export interface ChatRequest {
   conversation_id?: string;
   message: string;
   mode?: TurnKind;
+  database?: string;
 }
 
 /** Approve a previewed turn; `queries[i]` optionally replaces query i's SQL. */
@@ -175,11 +182,13 @@ export interface ConversationSummary {
   title: string;
   updated_at: string;
   last_kind?: TurnKind;
+  database?: string | null;
 }
 
 export interface Turn {
   id: string;
   kind?: TurnKind;
+  database?: string | null;
   question: string;
   sql: string | null;
   columns: string[] | null;
@@ -198,8 +207,11 @@ export interface Turn {
 export interface ConversationDetail {
   id: string;
   title: string;
+  database?: string | null;
   turns: Turn[];
 }
+
+export type Conversation = ConversationDetail;
 
 export interface SchemaColumn {
   name: string;

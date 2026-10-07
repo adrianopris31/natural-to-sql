@@ -22,6 +22,7 @@ class Conversation(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    database: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.datetime.now(datetime.UTC),
@@ -56,6 +57,7 @@ class Turn(Base):
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(String(16), nullable=False, default="sql")
+    database: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     sql: Mapped[str | None] = mapped_column(Text, nullable=True)
     columns_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     rows_json: Mapped[str | None] = mapped_column(Text, nullable=True)

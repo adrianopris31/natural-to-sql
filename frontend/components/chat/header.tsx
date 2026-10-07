@@ -7,13 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Menu, Moon, Sun, X, Activity, ScrollText, Settings } from "lucide-react";
 import { SqlLogPanel } from "./sql-log-panel";
 import { SettingsDialog } from "./settings-dialog";
+import { DatabaseSelector } from "./database-selector";
 
 interface HeaderProps {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  currentDatabase?: string | null;
+  onSelectDatabase?: (databaseId: string) => void;
 }
 
-export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
+export function Header({
+  sidebarOpen,
+  onToggleSidebar,
+  currentDatabase,
+  onSelectDatabase,
+}: HeaderProps) {
   const [isDark, setIsDark] = useState(false);
   const [sqlLogOpen, setSqlLogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -107,6 +115,12 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
           </span>
           <Activity className="size-3 text-muted-foreground sm:hidden" />
         </div>
+
+        {/* Database Switcher */}
+        <DatabaseSelector
+          currentDatabase={currentDatabase}
+          onSelectDatabase={onSelectDatabase}
+        />
 
         {/* SQL audit log */}
         <Button

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.core.db import get_engine
+from app.core.db import get_default_database_name, get_engine
 from app.errors import SchemaError
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +125,19 @@ async def _fetch_sample_values(
     return []
 
 
-async def introspect_schema() -> SchemaModel:
+async def introspect_schema(
+    engine: AsyncEngine | None = None,
+    db_name: str | None = None,
+) -> SchemaModel:
     """Introspect target database information_schema and return SchemaModel."""
     settings = get_settings()
-    engine = get_engine()
-    db_name = engine.url.database
+    if engine is None:
+        engine = get_engine(db_name)
+    if db_name is None:
+        if hasattr(engine, "url"):
+            db_name = getattr(engine.url, "database", None)
+        else:
+            db_name = get_default_database_name()
     if not db_name:
         raise SchemaError("Database name not configured in TARGET_DB_URL")
 
@@ -231,10 +242,10 @@ async def introspect_schema() -> SchemaModel:
 
 
 class SchemaCache:
-    """Thread-safe in-memory cache for database schema."""
+    """Thread-safe in-memory cache for database schema keyed by database name."""
 
     def __init__(self) -> None:
-        self._schema: SchemaModel | None = None
+        self._schemas: dict[str, SchemaModel] = {}
         self._lock: asyncio.Lock | None = None
 
     def _get_lock(self) -> asyncio.Lock:
@@ -242,12 +253,35 @@ class SchemaCache:
             self._lock = asyncio.Lock()
         return self._lock
 
-    async def get_schema(self, force_refresh: bool = False) -> SchemaModel:
+    @property
+    def _schema(self) -> SchemaModel | None:
+        """Backwards compatibility for single-schema access and conftest fixtures."""
+        default_db = get_default_database_name()
+        return self._schemas.get(default_db)
+
+    @_schema.setter
+    def _schema(self, val: SchemaModel | None) -> None:
+        if val is None:
+            self._schemas.clear()
+        else:
+            key = val.database or get_default_database_name()
+            self._schemas[key] = val
+
+    async def get_schema(
+        self,
+        db_name: str | None = None,
+        force_refresh: bool = False,
+    ) -> SchemaModel:
         """Get cached schema or introspect if not cached or force_refresh=True."""
+        target_db = db_name or get_default_database_name()
         async with self._get_lock():
-            if self._schema is None or force_refresh:
-                self._schema = await introspect_schema()
-            return self._schema
+            if target_db not in self._schemas or force_refresh:
+                self._schemas[target_db] = await introspect_schema(db_name=target_db)
+            return self._schemas[target_db]
+
+    def clear(self) -> None:
+        """Clear all cached schemas."""
+        self._schemas.clear()
 
 
 _cache = SchemaCache()

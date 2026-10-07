@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     message: str
     mode: Literal["sql", "docs"] = "sql"
+    database: str | None = None
 
 
 class RunRequest(BaseModel):
@@ -61,12 +62,13 @@ async def chat_endpoint(
         )
     else:
         settings = get_settings()
-        engine = get_engine()
+        engine = get_engine(request.database)
         schema_cache = get_schema_cache()
 
         event_generator = process_chat(
             message=request.message,
             conversation_id=request.conversation_id,
+            database=request.database,
             client=client,
             engine=engine,
             schema_cache=schema_cache,
@@ -93,11 +95,12 @@ async def run_turn_endpoint(
             status_code=status.HTTP_409_CONFLICT,
             detail="Docs turns cannot be run or approved",
         )
+    turn_db = getattr(turn, "database", None) if turn else None
     event_generator = run_approved_turn(
         turn_id=turn_id,
         sql_overrides=request.queries,
         client=client,
-        engine=get_engine(),
+        engine=get_engine(turn_db),
         schema_cache=get_schema_cache(),
         settings=get_settings(),
     )

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.api.audit import router as audit_router
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
+from app.api.databases import router as databases_router
 from app.api.schema import router as schema_router
 from app.api.settings import router as settings_router
 from app.api.v1.keys import router as v1_keys_router
@@ -99,6 +100,7 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(conversations_router)
 app.include_router(schema_router)
+app.include_router(databases_router)
 app.include_router(audit_router)
 app.include_router(v1_query_router)
 app.include_router(v1_keys_router)

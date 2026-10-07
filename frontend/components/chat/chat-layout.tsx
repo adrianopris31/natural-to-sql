@@ -75,6 +75,8 @@ export function ChatLayout() {
     turns,
     isStreaming,
     activeConversationId,
+    currentDatabase,
+    setCurrentDatabase,
     sendMessage,
     stopGeneration,
     retry,
@@ -167,6 +169,8 @@ export function ChatLayout() {
           activeConversationId={activeConversationId}
           onSelectConversation={handleSelectConversation}
           onNewChat={handleNewChat}
+          currentDatabase={currentDatabase}
+          onSelectDatabase={setCurrentDatabase}
         />
       </div>
 
@@ -191,6 +195,8 @@ export function ChatLayout() {
               activeConversationId={activeConversationId}
               onSelectConversation={handleSelectConversation}
               onNewChat={handleNewChat}
+              currentDatabase={currentDatabase}
+              onSelectDatabase={setCurrentDatabase}
               className="w-full border-r-0"
             />
           </div>
@@ -202,6 +208,8 @@ export function ChatLayout() {
         <Header
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          currentDatabase={currentDatabase}
+          onSelectDatabase={setCurrentDatabase}
         />
 
         {/* Top Health Warning Banner */}

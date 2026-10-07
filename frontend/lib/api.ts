@@ -2,11 +2,12 @@ import {
   AuditEntry,
   ChatRequest,
   RunRequest,
-  CompactSchema,
   ConversationDetail,
   ConversationSummary,
+  DatabaseItem,
   HealthResponse,
   SchemaRefreshResponse,
+  SchemaResponse,
   SSEEvent,
   TurnKind,
   SourceItem,
@@ -120,14 +121,28 @@ export async function chatStream(
   conversationId?: string,
   onEvent?: (ev: SSEEvent) => void,
   signal?: AbortSignal,
-  mode?: TurnKind
+  mode?: TurnKind,
+  database?: string
 ): Promise<void> {
   const body: ChatRequest = {
     message,
     ...(conversationId ? { conversation_id: conversationId } : {}),
     ...(mode ? { mode } : {}),
+    ...(database ? { database } : {}),
   };
   return streamSSE("/chat", body, onEvent, signal);
+}
+
+/** Convenience wrapper matching alternative argument ordering. */
+export async function sendChatStream(
+  message: string,
+  conversationId?: string,
+  mode?: string,
+  database?: string,
+  onEvent?: (ev: SSEEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  return chatStream(message, conversationId, onEvent, signal, mode as TurnKind, database);
 }
 
 /** Phase 2: approve a previewed turn (optionally with edited SQL) and stream results. */
@@ -145,6 +160,10 @@ export async function cancelTurn(turnId: string): Promise<void> {
   return request<void>(`/chat/${encodeURIComponent(turnId)}/cancel`, { method: "POST" });
 }
 
+export async function fetchDatabases(): Promise<DatabaseItem[]> {
+  return request<DatabaseItem[]>("/databases");
+}
+
 export async function fetchConversations(): Promise<ConversationSummary[]> {
   return request<ConversationSummary[]>("/conversations");
 }
@@ -159,12 +178,14 @@ export async function deleteConversation(id: string): Promise<void> {
   });
 }
 
-export async function fetchSchema(): Promise<CompactSchema> {
-  return request<CompactSchema>("/schema");
+export async function fetchSchema(database?: string): Promise<SchemaResponse> {
+  const query = database ? `?database=${encodeURIComponent(database)}` : "";
+  return request<SchemaResponse>(`/schema${query}`);
 }
 
-export async function refreshSchema(): Promise<SchemaRefreshResponse> {
-  return request<SchemaRefreshResponse>("/schema/refresh", {
+export async function refreshSchema(database?: string): Promise<SchemaRefreshResponse> {
+  const query = database ? `?database=${encodeURIComponent(database)}` : "";
+  return request<SchemaRefreshResponse>(`/schema/refresh${query}`, {
     method: "POST",
   });
 }

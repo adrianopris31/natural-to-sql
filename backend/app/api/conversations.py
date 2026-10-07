@@ -20,6 +20,7 @@ class ConversationSummary(BaseModel):
     title: str
     updated_at: str
     last_kind: str = "sql"
+    database: str | None = None
 
 
 class QueryResponse(BaseModel):
@@ -53,6 +54,7 @@ class TurnResponse(BaseModel):
     status: str
     error: str | None = None
     created_at: str
+    database: str | None = None
 
 
 class ConversationDetail(BaseModel):
@@ -60,6 +62,7 @@ class ConversationDetail(BaseModel):
 
     id: str
     title: str
+    database: str | None = None
     turns: list[TurnResponse]
 
 
@@ -73,6 +76,7 @@ async def get_conversations() -> list[ConversationSummary]:
             title=c.title,
             updated_at=c.updated_at.isoformat(),
             last_kind=c.turns[-1].kind if c.turns and hasattr(c.turns[-1], "kind") else "sql",
+            database=getattr(c, "database", None),
         )
         for c in convs
     ]
@@ -117,12 +121,14 @@ async def get_conversation_by_id(conversation_id: str) -> ConversationDetail:
                 status=t.status,
                 error=t.error,
                 created_at=t.created_at.isoformat(),
+                database=getattr(t, "database", None),
             )
         )
 
     return ConversationDetail(
         id=conv.id,
         title=conv.title,
+        database=getattr(conv, "database", None),
         turns=turn_models,
     )
 
