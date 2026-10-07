@@ -2,11 +2,10 @@
 <!-- Agents: rewrite the top block each session. Keep this file under ~100 lines. Protocol: GEMINI.md → "PROGRESS.md protocol". -->
 
 ## STATUS
-Phase 12 (Dynamic Multi-Database Switching) completed and verified across backend and frontend on branch `feat/dynamic-db-switching`. 384 backend tests and 93 frontend tests (477 total) passing with zero lint or type errors.
+Phase 12 (Dynamic Multi-Database Switching) completed, verified, and merged into `main`. 384 backend tests and 93 frontend tests (477 total) passing with zero lint or type errors.
 
 ## NEXT
-1. **Phase 12 Merge**: Open PR or merge `feat/dynamic-db-switching` into main.
-2. **Phase 8 follow-ups / Evals**: Re-run eval benchmark (`make eval`) on real schema, live checks with Ollama.
+Phase 8 follow-ups / Evals: Re-run eval benchmark (`make eval`) on real schema, live checks with Ollama.
 
 ## OPEN (need user input)
 none
@@ -87,7 +86,7 @@ Review of `535b8b7` found the settings guard bypassable and four smaller issues.
 - 2026-09-29: P6.1 TableSelector uses 1-hop bidirectional FK graph expansion when schema > 40 tables.
 
 ## LOG (newest first; compact when more than 15 lines)
-- 2026-10-07: Phase 12 (Dynamic Multi-Database Switching) complete on branch feat/dynamic-db-switching. Backend: multi-engine pooling, db discovery, schema cache per db, database tracking on conversations/turns, /api/databases. Frontend: DatabaseSelector UI dropdown, synchronized schema browser, conversation db restoration. 384 backend + 93 frontend tests green.
+- 2026-10-07: Phase 12 (Dynamic Multi-Database Switching) complete and merged into main. Multi-engine pooling, db discovery, schema cache per db, database tracking on conversations/turns, /api/databases, DatabaseSelector UI dropdown, synchronized schema browser, conversation db restoration. 384 backend + 93 frontend tests green.
 - 2026-10-05: Phase 11 review fixes on branch `feat/jira-slack-settings-ui`. Closed Next proxy localhost guard bypass via direct client call & proxy header rejection, added CSRF header, ipaddress loopback validation, 900s refresh timeout, write-only UX refinements. 369 backend + 84 frontend tests green.
 - 2026-10-05: Phase 11 complete on branch `feat/jira-slack-settings-ui`. Implemented Jira/Slack settings UI modal, write-only secrets, localhost & feature-flag security guards, /api/settings/sources & /refresh, 358 backend + 79 frontend tests green.
 - 2026-10-01: Phase 10 complete on branch `feat/external-api-service`. Implemented `/v1/query`, `/v1/query/{turn_id}/approve`, `/v1/query/{turn_id}/cancel`, `/v1/keys`, `/v1/audit`, `/v1/health`. Added API key auth, rate limiting, daily quota tracking, auto-approve risk gate, and CLI `scripts/manage_keys.py`. 332 backend tests and 69 frontend tests passing.

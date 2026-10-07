@@ -189,7 +189,7 @@ When `ENABLE_SETTINGS_UI=true` and the app is opened on the backend's own machin
 Natural-to-SQL provides a production-ready headless REST API mounted under `/v1/`, allowing external automation tools, Slack/Discord bots, CI/CD pipelines, and microservices to run queries programmatically.
 
 ### Architecture & Security Policies
-- **Database Scope**: The API queries the single target database configured via `TARGET_DB_URL` in `.env`. Connection strings are **never accepted in API requests** to prevent SSRF and credential leaks. *(Dynamic database switching via UI and multi-tenant key mapping is planned on the future roadmap).*
+- **Database Scope**: The API queries the default database configured via `TARGET_DB_URL`, or any registered database specified via `"database": "db_name"` in the request body. Connection strings are **never accepted in API requests** to prevent SSRF and credential leaks.
 - **Authentication**: Secured via `X-API-Key: nl_live_...` or standard `Authorization: Bearer nl_live_...`.
 - **Zero Plaintext Storage**: Keys are hashed with SHA-256 before storage in SQLite (`app.db`).
 - **Scopes**:
@@ -701,6 +701,19 @@ Restart the application (`make dev` or `make docker-up`). The application will:
 2. Render your tables in the sidebar schema browser.
 3. Cache schema structure in memory for instant query generation.
 
+### 5. Multi-Database Switching & Aliases
+
+You can switch across multiple databases directly from the UI or external API:
+
+1. **Auto-Discovery on Same Host**: The application automatically inspects available schemas with `SHOW DATABASES` (excluding internal MySQL system schemas `mysql`, `information_schema`, `performance_schema`, `sys`). Any database the `nl2sql_ro` user has `SELECT` privileges on is available in the Database Selector.
+2. **Explicit Database Aliases (`TARGET_DATABASES`)**: Connect across different MySQL instances or schemas by configuring JSON aliases in `.env`:
+   ```env
+   TARGET_DATABASES={"analytics": "mysql+asyncmy://nl2sql_ro:pass@127.0.0.1:3306/analytics", "crm": "mysql+asyncmy://nl2sql_ro:pass@127.0.0.1:3306/crm"}
+   ```
+3. **Database Selector in Header & Sidebar**: The dropdown in the top header lets you select the active database. Switching databases immediately refreshes the Schema Browser and sets the target for new conversation queries.
+4. **Conversation Affinity**: Each conversation thread records its active database in SQLite (`app.db`). Switching back to an older conversation automatically restores the database context for that thread.
+5. **Headless API Multi-Tenancy**: External callers via `POST /v1/query` can specify `"database": "analytics"` in the JSON request body to query designated databases programmatically without passing raw connection strings.
+
 ---
 
 ## 🖥️ UI Walkthrough & Approval Flow
@@ -838,15 +851,16 @@ Results are stored in `backend/evals/results/<timestamp>-<model>-<prompt_version
 
 ## 🚀 Roadmap & Future Extensions
 
-### 1. Headless External API Service (`POST /v1/query`)
-- **Headless Querying**: Allow external clients (backend services, Slack bots, scripts, automated workflows) to query the database programmatically via `X-API-Key` authentication.
-- **Automated Risk Gating**: Safe queries (`risk.level < high` and `explain.blocked == false`) execute automatically inside read-only transactions; high-risk queries return an explicit `EXPLAIN_BLOCKED` response without running.
-- **Unified Querying**: Supports both `mode: "sql"` and `mode: "docs"`, delivering structured answers, SQL queries, and rows over standard JSON responses.
+### 1. Interactive Data Visualizations & Charting
+- **Automated Chart Generation**: Inline interactive data visualizations (bar, line, scatter charts via Recharts / Vega-Lite) synthesized from query results.
+- **Exporting Capabilities**: One-click PNG/SVG visualization export alongside existing CSV data tables.
 
-### 2. Multi-Database Architecture & Dynamic Switching
-- **Current State**: Single target database configured via `TARGET_DB_URL` in `.env`.
-- **UI Database Selector**: Enable switching between configured databases directly from the Web UI (e.g., `ecommerce`, `analytics`, `crm`).
-- **Connection Registry**: Maintain safe, pre-introspected connection pools with strict read-only guarantees without passing untrusted connection strings over the network.
+### 2. Multi-Tenant API Key Scoping
+- **Database-Scoped API Keys**: Restrict specific external API keys (`nl_live_...`) to designated database aliases or schemas.
+- **Granular Quotas**: Per-database rate limits and usage monitoring for multi-team deployments.
+
+### 3. Model Fine-Tuning & Domain Adapters
+- **Domain-Specific LoRA Adapters**: Support fine-tuned adapter weights on top of `qwen2.5-coder` for specialized industry vocabularies and complex recursive queries.
 
 ---
 

@@ -256,7 +256,7 @@ Status: ✅ = done (branch `feat/external-api-service`).
   - `GET /v1/audit`: query SQL lifecycle audit log (admin)
 - ✅ **P10.5** CLI management tool: `scripts/manage_keys.py` (`new`, `list`, `revoke`).
 - ✅ **P10.6** Test suite: unit (`tests/unit/test_api_auth.py`), integration (`tests/integration/test_v1_api.py`), bringing backend tests to 332 with 100% pass rate.
-- ⏳ **P10.7 (Roadmap)** Dynamic multi-database connection: currently single database via `TARGET_DB_URL` in `.env`; future roadmap for UI database switching and key-to-database tenant mapping.
+- ✅ **P10.7** Dynamic multi-database connection: multi-engine pooling, db auto-discovery, schema caching, and UI switcher (completed in Phase 12).
 
 ### Phase 11 — Jira/Slack Settings UI (Knowledge-Bot Phase 3) (added 2026-10-05)
 Status: ✅ = done (branch `feat/jira-slack-settings-ui`).
