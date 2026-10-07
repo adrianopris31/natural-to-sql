@@ -221,7 +221,7 @@ Status: ✅ = done (committed on branch `feat/sql-preview-safety`), ⏳ = open. 
 - ✅ **P8.7** Tests: EXPLAIN unit tests, rewritten pipeline integration tests, QueryPreview/use-chat/api/sse tests (backend 257, frontend 50).
 - ⏳ **P8.8** Live check with Ollama on `easybiz_data_1`: plan → preview → Run / Edit / Cancel in the UI. Only scripted-model runs have been verified so far.
 - ⏳ **P8.9** Re-run evals with prompt v1.1 (`make eval`); accept only if no regression > 2 points vs v1.0 (87.5%).
-- ⏳ **P8.10** Playwright e2e (`frontend/tests/e2e/`, currently missing): ask → preview → Run → tables → answer; Edit; Cancel; blocked; stream cutoff.
+- ✅ **P8.10** Playwright e2e (`frontend/tests/e2e/chat.spec.ts`): ask → preview → Run → tables → answer; Edit; Cancel; blocked; stream cutoff; docs mode.
 - ⏳ **P8.11** Tune EXPLAIN thresholds after observing real query costs (real DB so far: 5–230; defaults are 5M cost / 10M rows).
 - ✅ **P8.12** Write-request refusal: `core/intent.py` (keyword check, before the LLM) + `SqlDraft.write_intent` (prompt v1.2 rule 10 + few-shot) → `refused` event/status. Fixes "delete user" showing "Completed" (the model had asked "Are you sure you want to delete…?" and the frontend's `done` hid the clarification).
 - ✅ **P8.13** Risk flags: `core/risk.py` → `queries[].risk`; UI red banner, per-query flags, "Run anyway" + confirmation checkbox for high risk.
