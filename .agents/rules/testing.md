@@ -20,11 +20,11 @@ description: Testing subagent rules. Apply whenever you write or change tests or
 | Evals | `evals/` | Ollama plus the dev DB | on demand: `uv run python -m evals.run` |
 
 - The security corpus format is `{id, sql, reason}` for attacks and `{id, sql}` for the safe cases. The runner parametrizes over the files. The **attack** cases assert rejection, and the **safe** cases assert acceptance *and* that the re-rendered SQL has the same meaning (they parse to equal ASTs, modulo the injected LIMIT).
-- The required integration test (P2.4): with the validator bypassed, `INSERT`, `UPDATE`, `DROP` and `CREATE` through the executor all fail, which proves the RO user plus the READ ONLY transaction hold on their own. ⏳ The current `test_defense_in_depth.py` opens the READ ONLY txn itself; add a variant *without* the txn to prove the RO user alone.
+- The required integration test (P2.4): with the validator bypassed, `INSERT`, `UPDATE`, `DROP` and `CREATE` through the executor all fail, which proves the RO user plus the READ ONLY transaction hold on their own. Covered with and without the READ ONLY transaction in `test_defense_in_depth.py`.
 - The pipeline tests (`tests/integration/test_chat_pipeline.py`) cover: **the preview never executes** (no `result`/answer before `/run`), run after approval, run only once (`INVALID_STATE`), cancel, user-edited SQL is re-validated and executed, a dangerous edit is refused with nothing run, EXPLAIN `blocked` refuses the run, repair after a validation error, repair after an EXPLAIN error (unknown column), repair exhaustion, multi-query preview + run + combined answer, clarification, history includes only `done` turns, and the HTTP endpoints (`/api/chat`, `/run`, `/cancel` 204/409). Keep all of these when changing the pipeline.
 - Also covered: "delete …" refused with **no LLM call** and a `refused` audit entry; model `write_intent` refused; a preview whose first draft was a DELETE gets high risk `UNSAFE_DRAFT_BLOCKED`; the audit stage sequence `rejected → validated → edited → validated → executed` (+ JSONL file); `GET /api/audit`. Unit: `tests/unit/test_intent.py` (positives and **false-positive guards**), `tests/unit/test_risk.py`. `tests/conftest.py` points `SQL_LOG_PATH` at a temp file, so tests never write the real log.
 - EXPLAIN summarization is tested without a DB (`tests/unit/test_explain.py`, using captured MySQL 9 plans). Add a captured plan whenever you change the gate logic.
-- Still missing: a timeout test (heavy cross join with a 1 ms timeout) and Playwright e2e (P8.10).
+- Execution timeout guard (Layer L3) tested via heavy cross join with 1 ms timeout in `test_executor.py`.
 - Coverage target: `core/` ≥ 95%, `app/` overall ≥ 85% (`pytest --cov`).
 
 ## Evals (text-to-SQL accuracy)

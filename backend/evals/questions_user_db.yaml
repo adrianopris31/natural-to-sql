@@ -1,0 +1,68 @@
+# Evaluation benchmark dataset for natural-to-sql on user real DB (easybiz_data_1)
+# P6.4: Questions covering projects, clients, tasks, users, and timesheet items.
+
+- id: user_01
+  question: "What is the total number of users?"
+  reference_sql: "SELECT COUNT(*) AS total_users FROM users WHERE deleted_at IS NULL;"
+  order_matters: false
+  tags: ["aggregation"]
+
+- id: user_02
+  question: "List the first name, last name, and email of all administrators."
+  reference_sql: "SELECT first_name, last_name, email FROM users WHERE is_admin = 1 AND deleted_at IS NULL;"
+  order_matters: false
+  tags: ["filter"]
+
+- id: client_01
+  question: "How many active clients are registered?"
+  reference_sql: "SELECT COUNT(*) AS total_clients FROM clients WHERE deleted_at IS NULL;"
+  order_matters: false
+  tags: ["aggregation"]
+
+- id: proj_01
+  question: "What is the total number of projects?"
+  reference_sql: "SELECT COUNT(*) AS total_projects FROM projects WHERE deleted_at IS NULL;"
+  order_matters: false
+  tags: ["aggregation"]
+
+- id: proj_02
+  question: "Show the top 10 projects and their client names ordered by project name."
+  reference_sql: "SELECT p.name AS project_name, c.name AS client_name FROM projects p JOIN clients c ON p.client_id = c.id WHERE p.deleted_at IS NULL ORDER BY p.name ASC LIMIT 10;"
+  order_matters: true
+  tags: ["join", "sorting"]
+
+- id: task_01
+  question: "How many completed tasks are there?"
+  reference_sql: "SELECT COUNT(*) AS completed_tasks FROM tasks WHERE is_completed = 1 AND deleted_at IS NULL;"
+  order_matters: false
+  tags: ["aggregation", "filter"]
+
+- id: task_02
+  question: "What are the top 5 projects with the most tasks?"
+  reference_sql: "SELECT p.name AS project_name, COUNT(t.id) AS task_count FROM projects p JOIN tasks t ON p.id = t.project_id WHERE p.deleted_at IS NULL AND t.deleted_at IS NULL GROUP BY p.id, p.name ORDER BY task_count DESC LIMIT 5;"
+  order_matters: true
+  tags: ["top-n", "join", "aggregation"]
+
+- id: ts_01
+  question: "What is the total count of logged timesheet items?"
+  reference_sql: "SELECT COUNT(*) AS total_entries FROM timesheet_item WHERE deleted_at IS NULL;"
+  order_matters: false
+  tags: ["aggregation"]
+
+- id: ts_02
+  question: "How many timesheet items have been validated?"
+  reference_sql: "SELECT COUNT(*) AS validated_entries FROM timesheet_item WHERE is_validated = 1 AND deleted_at IS NULL;"
+  order_matters: false
+  tags: ["aggregation", "filter"]
+
+- id: ts_03
+  question: "Show the top 3 users with the highest count of timesheet items."
+  reference_sql: "SELECT u.id, u.first_name, u.last_name, COUNT(ti.id) AS entry_count FROM users u JOIN timesheet_item ti ON u.id = ti.user_id WHERE u.deleted_at IS NULL AND ti.deleted_at IS NULL GROUP BY u.id, u.first_name, u.last_name ORDER BY entry_count DESC LIMIT 3;"
+  order_matters: true
+  tags: ["top-n", "join", "aggregation"]
+
+- id: label_01
+  question: "List all active task labels with their names and colors."
+  reference_sql: "SELECT name, color FROM task_labels WHERE deleted_at IS NULL;"
+  order_matters: false
+  tags: ["filter"]

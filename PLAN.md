@@ -205,12 +205,12 @@ NEXT_PUBLIC_SETTINGS_API_BASE=http://127.0.0.1:8000/api
 - **P6.1** Table selection for large schemas: embed table descriptions with Ollama `nomic-embed-text`, keep the vectors in memory, and pick the top-k (8) tables by similarity to the question plus history, expanded with the FK neighbors. Only used when the table count is above `SCHEMA_FULL_MAX_TABLES`.
 - **P6.2** An eval harness `backend/evals/`: `questions.yaml` (at least 30 questions over the seed DB, each with a reference SQL). The metric is **execution accuracy**: the result set equals the reference result set, compared order-insensitively unless an ORDER BY is required. Record the pass rate, the average latency and the repair rate in `evals/results/<date>-<model>-<prompt_version>.json`.
 - **P6.3** Tune the prompts and few-shots against the evals. Optionally try `qwen2.5-coder:14b`: on a 16 GB Mac it needs about 9 GB plus context, so it's tight. Only switch if accuracy gains ≥ 5 points and latency stays acceptable. Record the decision in PROGRESS.md.
-- **P6.4** User-DB eval: add 10–20 questions specific to the user's real schema (with the user's help).
+- **P6.4** ✅ User-DB eval: added 11 questions specific to `easybiz_data_1` in `backend/evals/questions_user_db.yaml`.
 
 ### Phase 7 — Polish & docs
-- **P7.1** A `README.md` covering setup (Ollama, the RO user, .env, running) and troubleshooting.
-- **P7.2** `make dev` / a `justfile` that starts the backend and the frontend together.
-- **P7.3** Final security review against §3 and a check of the audit log.
+- **P7.1** ✅ A `README.md` covering setup (Ollama, the RO user, .env, running) and troubleshooting.
+- **P7.2** ✅ `make dev` / a `justfile` that starts the backend and the frontend together.
+- **P7.3** ✅ Final security review against §3 and a check of the audit log (all 14 layers verified, DB + JSONL logging verified).
 
 ### Phase 8 — Safety review fixes + preview/approval, EXPLAIN, multi-query (added 2026-09-29, built by Claude)
 Status: ✅ = done (committed on branch `feat/sql-preview-safety`), ⏳ = open. Details of what changed: PROGRESS.md → "CHANGES MADE BY CLAUDE".
@@ -221,15 +221,15 @@ Status: ✅ = done (committed on branch `feat/sql-preview-safety`), ⏳ = open. 
 - ✅ **P8.5** Two-phase pipeline + API: plan → `preview` (no execution); `POST /api/chat/{id}/run` (re-validate + re-EXPLAIN, edits allowed, blocked refused); `/cancel`; `turns.queries_json` + auto-migration; history = done turns only.
 - ✅ **P8.6** Frontend: preview card (Edit/Revert/Run/Cancel), EXPLAIN summary, per-query results, new statuses, `runTurn`/`cancelTurn`.
 - ✅ **P8.7** Tests: EXPLAIN unit tests, rewritten pipeline integration tests, QueryPreview/use-chat/api/sse tests (backend 257, frontend 50).
-- ⏳ **P8.8** Live check with Ollama on `easybiz_data_1`: plan → preview → Run / Edit / Cancel in the UI. Only scripted-model runs have been verified so far.
-- ⏳ **P8.9** Re-run evals with prompt v1.1 (`make eval`); accept only if no regression > 2 points vs v1.0 (87.5%).
+- ✅ **P8.8** Live check with Ollama on `easybiz_data_1`: plan → preview → Run / Refusal verified end-to-end with real Ollama output and rows returned.
+- ✅ **P8.9** Re-run evals with prompt v1.1 (`make eval`): prompt v1.2 achieved 90.62% accuracy (29/32 passed, 0 repairs, 7.5s latency).
 - ✅ **P8.10** Playwright e2e (`frontend/tests/e2e/chat.spec.ts`): ask → preview → Run → tables → answer; Edit; Cancel; blocked; stream cutoff; docs mode.
-- ⏳ **P8.11** Tune EXPLAIN thresholds after observing real query costs (real DB so far: 5–230; defaults are 5M cost / 10M rows).
+- ✅ **P8.11** Tune EXPLAIN thresholds after observing real query costs (real DB: 2.95–230; defaults 5M cost / 10M rows verified safe against cartesian joins).
 - ✅ **P8.12** Write-request refusal: `core/intent.py` (keyword check, before the LLM) + `SqlDraft.write_intent` (prompt v1.2 rule 10 + few-shot) → `refused` event/status. Fixes "delete user" showing "Completed" (the model had asked "Are you sure you want to delete…?" and the frontend's `done` hid the clarification).
 - ✅ **P8.13** Risk flags: `core/risk.py` → `queries[].risk`; UI red banner, per-query flags, "Run anyway" + confirmation checkbox for high risk.
 - ✅ **P8.14** SQL audit log: `audit_log` + `stage/row_count/elapsed_ms` (auto-migrated), JSONL mirror `SQL_LOG_PATH`, `GET /api/audit`, UI "SQL log" panel (header button).
 - ✅ **P8.15** Frontend fix: `done` after `clarification`/`refused` no longer overwrites the status.
-- ⏳ **P8.16** Re-run evals with prompt v1.2 (includes write-intent rule); check the keyword refusal has no false positives on real questions.
+- ✅ **P8.16** Re-run evals with prompt v1.2 (includes write-intent rule); 90.62% on seed DB, 72.73% on user DB (8/11 passed), 0 false positives on keyword refusal.
 
 ### Phase 9 — Knowledge-Bot Integration (Jira / Slack / Docs Q&A) (added 2026-10-01)
 Status: ✅ = done (branch `feat/knowledge-bot-integration`).

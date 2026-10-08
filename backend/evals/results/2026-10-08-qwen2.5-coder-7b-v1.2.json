@@ -1,0 +1,25 @@
+{
+  "summary": {
+    "timestamp": "2026-10-08T11:07:19.848895+00:00",
+    "model": "qwen2.5-coder:7b",
+    "prompt_version": "v1.2",
+    "total_questions": 1,
+    "passed": 1,
+    "accuracy_pct": 100.0,
+    "repaired_and_passed": 0,
+    "total_repair_attempts": 0,
+    "avg_latency_ms": 5924.29
+  },
+  "details": [
+    {
+      "id": "agg_01",
+      "question": "What is the total number of users?",
+      "reference_sql": "SELECT COUNT(*) AS total_users FROM users;",
+      "generated_sql": "SELECT COUNT(*) AS total_users FROM users",
+      "passed": true,
+      "repair_attempts": 0,
+      "latency_ms": 5924.29,
+      "error": null
+    }
+  ]
+}

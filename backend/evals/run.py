@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -225,12 +226,30 @@ async def run_evals(
     ollama_url: str,
     limit: int | None = None,
     tag: str | None = None,
+    db_name: str | None = None,
+    db_url: str | None = None,
 ) -> None:
     """Run evaluation benchmark against configured questions and model."""
+    if db_url:
+        os.environ["TARGET_DB_URL"] = db_url
+        get_settings.cache_clear()
+        get_schema_cache().clear()
+    elif not db_name and questions_path.name == "questions.yaml":
+        current_url = get_settings().TARGET_DB_URL
+        if "ecommerce" not in current_url and ":3307" not in current_url:
+            fallback = (
+                os.environ.get("EVAL_TARGET_DB_URL")
+                or "mysql+asyncmy://nl2sql_ro:nl2sql_ro_pass@127.0.0.1:3307/ecommerce"
+            )
+            logger.info("Using eval ecommerce test container at %s", fallback)
+            os.environ["TARGET_DB_URL"] = fallback
+            get_settings.cache_clear()
+            get_schema_cache().clear()
+
     settings = get_settings()
-    engine = get_engine()
+    engine = get_engine(db_name)
     schema_cache = get_schema_cache()
-    schema = await schema_cache.get_schema()
+    schema = await schema_cache.get_schema(db_name)
 
     client = OllamaClient(
         base_url=ollama_url,
@@ -372,6 +391,19 @@ def main() -> None:
         help="Filter questions by tag",
     )
 
+    parser.add_argument(
+        "--db-url",
+        type=str,
+        default=None,
+        help="Target database connection URL (overrides TARGET_DB_URL)",
+    )
+    parser.add_argument(
+        "--database",
+        type=str,
+        default=None,
+        help="Target database name (if using multi-database configuration)",
+    )
+
     args = parser.parse_args()
 
     q_path = Path(args.questions)
@@ -385,6 +417,8 @@ def main() -> None:
             ollama_url=args.ollama_url,
             limit=args.limit,
             tag=args.tag,
+            db_name=args.database,
+            db_url=args.db_url,
         )
     )
 

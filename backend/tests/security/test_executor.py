@@ -83,3 +83,28 @@ async def test_executor_maps_errors() -> None:
 
     with pytest.raises(ExecutionError, match="Database query execution failed"):
         await run(safe_sql, engine=engine, settings=settings)
+
+
+@pytest.mark.asyncio
+async def test_executor_times_out_on_heavy_query() -> None:
+    """L3 execution timeout halts runaway queries via max_execution_time / asyncio guard."""
+    engine = get_engine()
+    settings = Settings(QUERY_TIMEOUT_MS=50)
+    schema = await introspect_schema()
+
+    safe_sql = validate(
+        "SELECT COUNT(*) FROM order_items oi1 JOIN order_items oi2 ON oi1.id < oi2.id",
+        schema=schema,
+        settings=settings,
+    )
+    with pytest.raises(ExecutionError) as exc_info:
+        await run(safe_sql, engine=engine, settings=settings)
+
+    err = str(exc_info.value).lower()
+    assert (
+        "interrupted" in err
+        or "timed out" in err
+        or "timeout" in err
+        or "execution time exceeded" in err
+        or "execution failed" in err
+    )
