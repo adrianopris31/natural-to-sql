@@ -888,3 +888,4 @@ Results are stored in `backend/evals/results/<timestamp>-<model>-<prompt_version
 ## 📄 License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+Built with AI-assisted development; I designed the architecture and reviewed the code.
