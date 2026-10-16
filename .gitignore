@@ -39,3 +39,21 @@ test-results/
 # OS
 .DS_Store
 Thumbs.db
+
+# AI agents & internal prompts
+.agents/
+.claude/
+.gemini/
+*.prompt
+*.prompt.md
+GEMINI.md
+ORCHESTRATOR_PROMPT.md
+REVIEWER_PROMPT.md
+PLAN.md
+PROGRESS.md
+REVIEW.md
+STARTUP_GUIDE.md
+
+# Private evaluation benchmarks
+backend/evals/questions_user_db.yaml
+

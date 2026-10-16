@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings conforming to PLAN.md §6."""
+    """Application settings and environment variable configuration."""
 
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),

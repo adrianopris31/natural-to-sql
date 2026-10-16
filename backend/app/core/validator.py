@@ -1,4 +1,4 @@
-"""SQL Safety Validator implementing Layers L4 through L10 per PLAN.md §3."""
+"""SQL Safety Validator implementing Layers L4 through L10 defense-in-depth security."""
 
 from __future__ import annotations
 

@@ -127,7 +127,7 @@ class KnowledgeBotHealth(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response conforming to PLAN.md §5."""
+    """Health check response schema."""
 
     db: Literal["ok", "error"]
     ollama: Literal["ok", "error"]

@@ -1,5 +1,5 @@
 /**
- * API Contract types mirroring PLAN.md §2 and §5 exactly.
+ * API Contract types for chat, SSE events, and settings.
  * No `any` allowed — strict typing with `unknown`.
  */
 
